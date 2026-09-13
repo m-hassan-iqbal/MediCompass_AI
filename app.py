@@ -86,18 +86,15 @@ def get_initialized_vector_store():
     return vs, fp
 
 
-# ─── SECRETS CONFIGURATION ───────────────────────────────────────────────────
-drive_urls_raw = st.secrets.get("GOOGLE_DRIVE_FOLDER_URLS", os.environ.get("GOOGLE_DRIVE_FOLDER_URLS", ""))
-has_secret_urls = bool(
-    drive_urls_raw
-    and drive_urls_raw.strip()
-    and any(not l.strip().startswith("#") for l in drive_urls_raw.splitlines() if l.strip())
-)
+# ─── SECRETS & BACKEND CONFIGURATION ──────────────────────────────────────────
+# End-users cannot see or edit these. Set in Streamlit Cloud Secrets (or .streamlit/secrets.toml)
+DEFAULT_DRIVE_URL = "https://drive.google.com/drive/folders/12JMNPPtw9ranu47PpEOFTqupACOHO66q?usp=sharing"
+drive_urls_raw = st.secrets.get("GOOGLE_DRIVE_FOLDER_URLS", os.environ.get("GOOGLE_DRIVE_FOLDER_URLS", DEFAULT_DRIVE_URL))
 
-# Retrieve vector store immediately on startup (zero blocking)
+# Retrieve vector store immediately on startup (loads pre-built knowledge base)
 vector_store, current_fingerprint = get_initialized_vector_store()
 
-# Initialize Groq Client & Session API Key
+# Initialize Groq Client from backend secrets (invisible to end users)
 if "groq_api_key" not in st.session_state:
     st.session_state.groq_api_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
 
@@ -163,123 +160,22 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # System Status
-    st.markdown("<div class='sidebar-section-title'>SYSTEM STATUS</div>", unsafe_allow_html=True)
+    # System Status (Clean, no user-editable boxes)
     chunk_count = len(getattr(vector_store, "chunks", []))
-    has_api_key = bool(st.session_state.groq_api_key and not st.session_state.groq_api_key.startswith("gsk_your_groq_api_key"))
+    groq_ready = groq_client.is_configured()
 
+    st.markdown("<div class='sidebar-section-title'>SYSTEM STATUS</div>", unsafe_allow_html=True)
     st.markdown(
         f"""
-        <div style="background-color: #0F172A; border: 1.5px solid #1E293B; border-radius: 12px; padding: 12px; margin-bottom: 16px; font-size: 0.8rem;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="color: #94A3B8;">• Knowledge Chunks:</span>
-                <span style="color: #10B981; font-weight: 700;">{chunk_count} verified</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="color: #94A3B8;">• Model:</span>
-                <span style="color: #F8FAFC; font-weight: 600;">{groq_model}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between;">
-                <span style="color: #94A3B8;">• Mode:</span>
-                <span style="color: {'#10B981' if has_api_key else '#F59E0B'}; font-weight: 700;">
-                    {'Live Groq API' if has_api_key else 'Verified Grounded Demo'}
-                </span>
-            </div>
+        <div style="font-size: 0.82rem; color: #CBD5E1; line-height: 1.8; background: #0F172A; border: 1.5px solid #1E293B; border-radius: 12px; padding: 14px 16px;">
+            <div>• Knowledge Base: <b style="color: #10B981;">{chunk_count:,} chunks verified</b></div>
+            <div>• Official Books: <b style="color: #FFFFFF;">Punjab & Federal SNC</b></div>
+            <div>• Past Papers: <b style="color: #FFFFFF;">MDCAT & NUMS 2021-25</b></div>
+            <div>• AI Reasoning: <span style="color: {'#4ADE80' if groq_ready else '#F59E0B'}; font-weight: 800;">{'🟢 Active Groq AI' if groq_ready else '⚡ Grounded RAG'}</span></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    # Expandable Settings (Groq API Key)
-    with st.expander("⚙️ API Configuration", expanded=not has_api_key):
-        user_key = st.text_input(
-            "Groq API Key",
-            value=st.session_state.groq_api_key,
-            type="password",
-            placeholder="gsk_...",
-            help="Free Groq API key available at console.groq.com",
-            key="groq_key_input",
-        )
-        if user_key != st.session_state.groq_api_key:
-            st.session_state.groq_api_key = user_key
-            groq_client.api_key = user_key
-            quiz_gen.api_key = user_key
-            st.rerun()
-
-        st.caption("Get your free API key at [console.groq.com](https://console.groq.com)")
-
-    # Expandable Knowledge Base Sync
-    with st.expander("📁 Knowledge Base & Sync", expanded=False):
-        st.markdown(
-            "<div style='font-size: 0.78rem; color: #94A3B8; margin-bottom: 8px; line-height: 1.4; font-weight: 600;'>"
-            "Option 1: Direct PDF Upload"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        uploaded_files = st.file_uploader(
-            "Upload Official Book PDFs",
-            type=["pdf"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-            key="pdf_uploader",
-        )
-        if uploaded_files:
-            os.makedirs(SOURCES_DIR, exist_ok=True)
-            saved_count = 0
-            for upf in uploaded_files:
-                dest_path = os.path.join(SOURCES_DIR, upf.name)
-                if not os.path.exists(dest_path):
-                    with open(dest_path, "wb") as f:
-                        f.write(upf.getbuffer())
-                    saved_count += 1
-            if saved_count > 0:
-                st.cache_resource.clear()
-                st.success(f"Added {saved_count} new PDF(s)! Updating index...")
-                time.sleep(1.0)
-                st.rerun()
-
-        st.markdown(
-            "<div style='font-size: 0.78rem; color: #94A3B8; margin-top: 12px; margin-bottom: 6px; line-height: 1.4; font-weight: 600;'>"
-            "Option 2: Sync Public Google Drive Links"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            "<div style='font-size: 0.74rem; color: #64748B; margin-bottom: 6px; line-height: 1.3;'>"
-            "Must be set to <b>Anyone with the link (Viewer)</b>."
-            "</div>",
-            unsafe_allow_html=True,
-        )
-        user_drive_input = st.text_area(
-            "Drive Links",
-            value="" if not has_secret_urls else drive_urls_raw.strip(),
-            placeholder="https://drive.google.com/drive/folders/YOUR_FOLDER_ID\nhttps://drive.google.com/file/d/YOUR_FILE_ID/view",
-            height=70,
-            label_visibility="collapsed",
-            key="gdrive_input_box",
-        )
-        if st.button("📥 Sync Google Drive", key="btn_sync_gdrive", type="primary", use_container_width=True):
-            target_links = [
-                u.strip()
-                for u in user_drive_input.splitlines()
-                if u.strip() and not u.strip().startswith("#")
-            ]
-            if not target_links:
-                st.warning("Please enter at least one valid Google Drive link.")
-            else:
-                with st.spinner("Downloading documents from Google Drive..."):
-                    downloaded = sync_google_drive_public_folders(target_links, SOURCES_DIR)
-                    if downloaded:
-                        st.cache_resource.clear()
-                        st.success(f"Downloaded {len(downloaded)} file(s)! Updating RAG index...")
-                        time.sleep(1.2)
-                        st.rerun()
-                    else:
-                        st.error("No files downloaded. Check that link is set to 'Anyone with the link can view' or use Direct Upload above.")
-
-    if st.button("⚡ Reload Knowledge Base", key="reload_kb", use_container_width=True):
-        st.cache_resource.clear()
-        st.rerun()
 
 
 # ─── PAGE 1: ANALYZE ──────────────────────────────────────────────────────────
@@ -297,16 +193,6 @@ if st.session_state.page == "analyze":
         """,
         unsafe_allow_html=True,
     )
-
-    if len(getattr(vector_store, "chunks", [])) == 0:
-        st.warning(
-            """
-            **Knowledge base not configured.**
-            Add authorized PDFs to `data/sources/` or configure `GOOGLE_DRIVE_FOLDER_URLS` in Streamlit Secrets.
-            """
-        )
-    elif has_secret_urls and len(getattr(vector_store, "chunks", [])) <= 12:
-        st.info("💡 **Google Drive Study Sources Connected**: Your Google Drive folder is configured. Expand **Knowledge Base & Sync** in the left sidebar and click **📥 Sync Google Drive** to download and index your full textbook library into the live RAG engine.")
 
     # Selection Row
     col_sub, col_exam = st.columns([1, 1])
@@ -326,7 +212,7 @@ if st.session_state.page == "analyze":
     query_input = st.text_area(
         "Enter Exam Question, Topic, or Concept",
         value=st.session_state.query,
-        placeholder="Example:\nWhich type of enzyme inhibition increases Km without changing Vmax?\n\nOr:\nEnzyme inhibition",
+        placeholder="Example:\nWhich type of enzyme inhibition increases Km without changing Vmax?\n\nOr:\nPeriodic trends in ionization energy across period 3",
         height=130,
         help="You can enter a full multiple-choice question stem, a specific topic, or a short keyword.",
     )
@@ -338,12 +224,12 @@ if st.session_state.page == "analyze":
         query_input = "Which type of enzyme inhibition increases Km without changing Vmax?"
         st.session_state.query = query_input
         st.rerun()
-    if c2.button("📌 Overcoming Inhibition", use_container_width=True):
-        query_input = "How does increasing substrate concentration affect competitive inhibition?"
+    if c2.button("📌 Projectile Motion & Angles", use_container_width=True):
+        query_input = "What is the trajectory and maximum height of projectile motion?"
         st.session_state.query = query_input
         st.rerun()
-    if c3.button("📌 Allosteric vs Active Site", use_container_width=True):
-        query_input = "Differences between competitive and non-competitive enzyme inhibition"
+    if c3.button("📌 Ionization Energy Trends", use_container_width=True):
+        query_input = "How does ionization energy change across a period in the periodic table?"
         st.session_state.query = query_input
         st.rerun()
 
@@ -377,7 +263,7 @@ if st.session_state.page == "analyze":
                     unsafe_allow_html=True,
                 )
                 progress_bar.progress(int((step_idx + 1) * 25))
-                time.sleep(0.3)
+                time.sleep(0.2)
 
             # RAG Retrieval (defensive call)
             if hasattr(vector_store, "retrieve_relevant_chunks"):
@@ -409,7 +295,7 @@ if st.session_state.page == "analyze":
 
             # Pre-generate 10-MCQ Quiz
             quiz_qs = quiz_gen.generate_10_mcq_quiz(
-                concept_title=analysis.get("concept_title", "Enzyme Kinetics"),
+                concept_title=analysis.get("concept_title", "Concept Check"),
                 subject=st.session_state.subject,
                 exam=st.session_state.exam,
                 retrieved_chunks=retrieved,
