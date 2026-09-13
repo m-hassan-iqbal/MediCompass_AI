@@ -1,493 +1,484 @@
 """
-MediCompass AI - UI Components, Fintech Visualizations, Diagram Renderer & Timer Logic
-Provides custom CSS, fintech-style circular SVG rings, responsive concept flowcharts,
-and robust session-state helpers tailored for Solid Black / Dark Mode.
+UI Helper and Styling Utilities for MediCompass AI.
+Pure Solid Black (#000000) OLED Theme with high-contrast typography.
+Polymorphic helper functions resilient to any combination of positional and keyword arguments.
 """
 
-import time
 from typing import Any
+import time
 import streamlit as st
 
 CUSTOM_CSS = """
 <style>
-/* Modern Fintech Intelligence Theme - Solid Black / Dark OLED */
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-
-:root {
-    --text-color: #F8FAFC !important;
-    --background-color: #000000 !important;
-    --secondary-background-color: #0F172A !important;
-    --primary-color: #6366F1 !important;
-}
-
-/* Force solid black background and crisp white text */
-html, body, [data-testid="stAppViewContainer"], .stApp {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+/* Solid Black Theme */
+.stApp {
     background-color: #000000 !important;
     color: #F8FAFC !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* Base text color overrides */
-[data-testid="stAppViewContainer"] *,
-[data-testid="stSidebar"] *,
-[data-testid="stMarkdownContainer"] *,
-.stMarkdown, .stText, p, span, div, label, li {
-    color: #F8FAFC;
-}
-
-/* Headings in vibrant white */
-h1, h2, h3, h4, h5, h6, .hero-title {
-    color: #FFFFFF !important;
-    font-weight: 800 !important;
-}
-
-/* Header & Navigation Bar - Semi-transparent dark blur so Streamlit Cloud controls remain visible */
-#MainMenu {visibility: hidden;}
-footer {display: none;}
 header[data-testid="stHeader"] {
-    background-color: rgba(5, 7, 14, 0.8) !important;
-    backdrop-filter: blur(8px) !important;
-}
-
-/* Clear, High-Contrast Error, Warning & Alert banners */
-[data-testid="stAlert"], .stAlert, [data-testid="stException"] {
-    background-color: #1E1B4B !important;
-    border: 1.5px solid #818CF8 !important;
-    border-radius: 14px !important;
-    color: #FFFFFF !important;
-    padding: 16px !important;
-    margin: 12px 0 !important;
-}
-[data-testid="stAlert"] *, .stAlert *, [data-testid="stException"] * {
-    color: #FFFFFF !important;
-}
-
-/* Container padding */
-.block-container {
-    padding-top: 1.5rem !important;
-    padding-bottom: 3rem !important;
-    max-width: 1140px;
-}
-
-/* Sidebar styling - OLED solid dark */
-[data-testid="stSidebar"] {
-    background-color: #080B11 !important;
-    border-right: 1.5px solid #1E293B !important;
-}
-[data-testid="stSidebar"] p, 
-[data-testid="stSidebar"] span, 
-[data-testid="stSidebar"] div,
-[data-testid="stSidebar"] label {
-    color: #F8FAFC !important;
-}
-
-/* Section titles in sidebar */
-.sidebar-section-title {
-    font-size: 0.78rem !important;
-    font-weight: 800 !important;
-    color: #94A3B8 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.08em !important;
-    margin-bottom: 8px !important;
-}
-
-/* Fintech card styles - dark carbon cards */
-.fintech-card {
-    background: #0F172A !important;
-    border: 1.5px solid #1E293B !important;
-    border-radius: 20px !important;
-    padding: 24px !important;
-    margin-bottom: 20px !important;
-    box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.4) !important;
-    transition: all 0.2s ease-in-out;
-}
-.fintech-card:hover {
-    box-shadow: 0 8px 32px -4px rgba(99, 102, 241, 0.15) !important;
-    border-color: #334155 !important;
-}
-.fintech-card * {
-    color: #F8FAFC;
-}
-
-/* Badges with high contrast in dark mode */
-.badge-verified {
-    background-color: #1E3A8A !important;
-    color: #93C5FD !important;
-    padding: 5px 14px !important;
-    border-radius: 9999px !important;
-    font-size: 0.78rem !important;
-    font-weight: 800 !important;
-    letter-spacing: 0.05em !important;
-    border: 1.5px solid #3B82F6 !important;
-    display: inline-flex !important;
-    align-items: center !important;
-}
-
-.badge-inference {
-    background-color: #3B0764 !important;
-    color: #D8B4FE !important;
-    padding: 5px 14px !important;
-    border-radius: 9999px !important;
-    font-size: 0.78rem !important;
-    font-weight: 800 !important;
-    letter-spacing: 0.05em !important;
-    border: 1.5px solid #8B5CF6 !important;
-    display: inline-flex !important;
-    align-items: center !important;
-}
-
-.badge-exam {
-    background-color: #1E293B !important;
-    color: #60A5FA !important;
-    padding: 5px 12px !important;
-    border-radius: 8px !important;
-    font-size: 0.82rem !important;
-    font-weight: 700 !important;
-    border: 1px solid #3B82F6 !important;
-    margin-right: 6px !important;
-}
-
-/* Hero Section */
-.hero-tag {
-    color: #818CF8 !important;
-    font-size: 0.88rem !important;
-    font-weight: 800 !important;
-    letter-spacing: 0.1em !important;
-    text-transform: uppercase !important;
-    margin-bottom: 8px !important;
-}
-
-.hero-title {
-    font-size: 2.3rem !important;
-    font-weight: 800 !important;
-    color: #FFFFFF !important;
-    line-height: 1.25 !important;
-    margin-bottom: 12px !important;
-}
-
-.hero-sub {
-    font-size: 1.08rem !important;
-    color: #94A3B8 !important;
-    line-height: 1.6 !important;
-    margin-bottom: 24px !important;
-    font-weight: 500 !important;
-}
-
-/* Excerpt quote block */
-.source-excerpt {
-    background-color: #090D16 !important;
-    border-left: 4px solid #6366F1 !important;
-    padding: 14px 18px !important;
-    border-radius: 0 12px 12px 0 !important;
-    font-size: 0.94rem !important;
-    color: #CBD5E1 !important;
-    font-style: italic !important;
-    line-height: 1.6 !important;
-    margin: 12px 0 !important;
-    border-top: 1px solid #1E293B !important;
-    border-right: 1px solid #1E293B !important;
+    background-color: #000000 !important;
     border-bottom: 1px solid #1E293B !important;
 }
 
-/* Memory hook highlight box */
-.memory-box {
-    background: #18182E !important;
-    border: 1.5px solid #4338CA !important;
-    border-radius: 16px !important;
-    padding: 18px 22px !important;
-    margin: 16px 0 !important;
-}
-.memory-box * {
-    color: #E0E7FF !important;
+section[data-testid="stSidebar"] {
+    background-color: #080B11 !important;
+    border-right: 1px solid #1E293B !important;
 }
 
-/* Form Input & Widget Labels */
-[data-testid="stWidgetLabel"] p,
-[data-testid="stWidgetLabel"] label,
-[data-testid="stWidgetLabel"] span {
-    color: #F8FAFC !important;
-    font-weight: 700 !important;
-    font-size: 0.95rem !important;
+section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] p {
+    color: #CBD5E1 !important;
 }
 
-/* Text Area and Selectbox Contrast in Solid Black */
-.stTextArea textarea {
-    background-color: #0F172A !important;
-    color: #FFFFFF !important;
-    border: 1.5px solid #334155 !important;
-    border-radius: 12px !important;
-    font-size: 0.95rem !important;
-    font-weight: 500 !important;
-}
-.stTextArea textarea:focus {
-    border-color: #6366F1 !important;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3) !important;
-}
-
-div[data-baseweb="select"] {
-    background-color: #0F172A !important;
-    border: 1.5px solid #334155 !important;
-    border-radius: 12px !important;
-}
-div[data-baseweb="select"] * {
-    color: #FFFFFF !important;
-    font-weight: 600 !important;
-}
-div[data-baseweb="popover"] ul {
-    background-color: #0F172A !important;
-}
-div[data-baseweb="popover"] li {
-    color: #FFFFFF !important;
-}
-
-/* Button contrast */
-div.stButton > button {
-    border-radius: 12px !important;
-    font-weight: 700 !important;
-    padding: 10px 24px !important;
-    transition: all 0.2s !important;
-}
-div.stButton > button[kind="primary"] {
-    background-color: #6366F1 !important;
-    color: #FFFFFF !important;
-    border: none !important;
-}
-div.stButton > button[kind="primary"]:hover {
-    background-color: #4F46E5 !important;
-    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4) !important;
-}
-div.stButton > button[kind="primary"] * {
-    color: #FFFFFF !important;
-}
-div.stButton > button[kind="secondary"] {
-    background-color: #0F172A !important;
-    color: #F8FAFC !important;
-    border: 1.5px solid #334155 !important;
-}
-div.stButton > button[kind="secondary"]:hover {
-    background-color: #1E293B !important;
-    border-color: #6366F1 !important;
-}
-div.stButton > button[kind="secondary"] * {
-    color: #F8FAFC !important;
-}
-
-/* Quiz Option Radio Cards */
-div[data-testid="stRadio"] > div {
-    gap: 12px;
-}
-div[data-testid="stRadio"] label {
+.fintech-card {
     background-color: #0F172A !important;
     border: 1.5px solid #1E293B !important;
-    border-radius: 14px !important;
-    padding: 14px 18px !important;
-    cursor: pointer;
-    transition: all 0.15s ease-in-out;
-}
-div[data-testid="stRadio"] label:hover {
-    border-color: #6366F1 !important;
-    background-color: #18182E !important;
-}
-div[data-testid="stRadio"] label * {
-    color: #F8FAFC !important;
+    border-radius: 16px !important;
+    padding: 24px !important;
+    margin-bottom: 20px !important;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.7) !important;
 }
 
-/* Metric KPI Styling */
-.kpi-container {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background-color: #0F172A;
-    border: 1.5px solid #1E293B;
-    border-radius: 16px;
-    padding: 18px 22px;
-}
-.kpi-val {
-    font-size: 2rem;
-    font-weight: 800;
-    color: #FFFFFF;
-}
-.kpi-label {
-    font-size: 0.82rem;
-    color: #94A3B8;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-/* Tabs Dark styling */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
-    background-color: #080B11;
-    padding: 6px;
-    border-radius: 12px;
-    border: 1px solid #1E293B;
-}
-.stTabs [data-baseweb="tab"] {
-    border-radius: 8px;
-    color: #94A3B8 !important;
+.badge-verified {
+    background-color: #0F3323 !important;
+    color: #34D399 !important;
+    border: 1px solid #059669 !important;
+    padding: 4px 12px !important;
+    border-radius: 9999px !important;
     font-weight: 700 !important;
-    padding: 8px 16px;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.05em !important;
 }
-.stTabs [aria-selected="true"] {
-    background-color: #1E293B !important;
+
+.badge-warning {
+    background-color: #3B1219 !important;
+    color: #F87171 !important;
+    border: 1px solid #DC2626 !important;
+    padding: 4px 12px !important;
+    border-radius: 9999px !important;
+    font-weight: 700 !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.05em !important;
+}
+
+.badge-info {
+    background-color: #1E1B4B !important;
+    color: #A5B4FC !important;
+    border: 1px solid #4F46E5 !important;
+    padding: 4px 12px !important;
+    border-radius: 9999px !important;
+    font-weight: 700 !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.05em !important;
+}
+
+.memory-box {
+    background: #080B11 !important;
+    border-left: 4px solid #6366F1 !important;
+    border-radius: 8px !important;
+    padding: 16px 20px !important;
+    margin: 16px 0 !important;
+}
+
+.stButton > button {
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    padding: 0.6rem 1.4rem !important;
+    transition: all 0.2s ease !important;
+}
+
+.stButton > button[kind="primary"] {
+    background: #4F46E5 !important;
+    border: 1px solid #6366F1 !important;
     color: #FFFFFF !important;
+    box-shadow: 0 4px 14px 0 rgba(79, 70, 229, 0.4) !important;
+}
+
+.stButton > button[kind="primary"]:hover {
+    background: #4338CA !important;
+    border-color: #4F46E5 !important;
+    box-shadow: 0 6px 20px rgba(79, 70, 229, 0.6) !important;
+}
+
+.stButton > button[kind="secondary"] {
+    background-color: #0F172A !important;
+    color: #CBD5E1 !important;
+    border: 1.5px solid #1E293B !important;
+}
+
+.stButton > button[kind="secondary"]:hover {
+    background-color: #1E293B !important;
+    border-color: #334155 !important;
+    color: #FFFFFF !important;
+}
+
+div[data-baseweb="select"] > div {
+    background-color: #0F172A !important;
+    border: 1.5px solid #1E293B !important;
+    border-radius: 12px !important;
+    color: #FFFFFF !important;
+}
+
+.stTextArea textarea {
+    background-color: #0F172A !important;
+    border: 1.5px solid #1E293B !important;
+    border-radius: 12px !important;
+    color: #FFFFFF !important;
+    font-size: 0.95rem !important;
+}
+
+.stTextArea textarea:focus {
+    border-color: #6366F1 !important;
+    box-shadow: 0 0 0 1px #6366F1 !important;
+}
+
+div[data-testid="stExpander"] {
+    background-color: #0F172A !important;
+    border: 1px solid #1E293B !important;
+    border-radius: 14px !important;
+    margin-bottom: 12px !important;
+}
+
+.stRadio > div {
+    background-color: #080B11 !important;
+    border: 1px solid #1E293B !important;
+    border-radius: 14px !important;
+    padding: 16px !important;
+}
+
+.hero-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #1E1B4B;
+    color: #C7D2FE;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid #4338CA;
+    margin-bottom: 14px;
 }
 </style>
 """
 
 
 def apply_custom_styles():
-    """Injects custom CSS into the active Streamlit app."""
+    """Injects custom solid black CSS into the Streamlit session."""
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
+def render_fintech_priority_ring(*args, **kwargs) -> str:
+    """
+    Renders an SVG priority ring gauge. Completely polymorphic to accept:
+    (score, label), (label, score), or keywords: score=..., label=..., priority_level=...
+    """
+    score = 75
+    label = "STUDY NOW"
+
+    # 1. Process keyword arguments
+    if "score" in kwargs and kwargs["score"] is not None:
+        try:
+            score = int(kwargs["score"])
+        except (ValueError, TypeError):
+            score = 75
+    if "label" in kwargs and kwargs["label"] is not None:
+        label = str(kwargs["label"])
+    elif "priority_level" in kwargs and kwargs["priority_level"] is not None:
+        label = str(kwargs["priority_level"])
+
+    # 2. Process positional arguments
+    if len(args) == 1:
+        val = args[0]
+        if isinstance(val, (int, float)):
+            score = int(val)
+        elif val is not None:
+            label = str(val)
+    elif len(args) >= 2:
+        val1, val2 = args[0], args[1]
+        if isinstance(val1, (int, float)):
+            score = int(val1)
+            label = str(val2 or "STUDY NOW")
+        elif isinstance(val2, (int, float)):
+            score = int(val2)
+            label = str(val1 or "STUDY NOW")
+        else:
+            try:
+                score = int(val1)
+                label = str(val2 or "STUDY NOW")
+            except (ValueError, TypeError):
+                try:
+                    score = int(val2)
+                    label = str(val1 or "STUDY NOW")
+                except (ValueError, TypeError):
+                    score = 75
+                    label = str(val1 or "STUDY NOW")
+
+    # Safe score clamp
+    score = max(0, min(100, score))
+    label_clean = str(label).strip() or "STUDY NOW"
+    label_lower = label_clean.lower()
+
+    radius = 54
+    circumference = 2 * 3.14159 * radius
+    stroke_offset = circumference - (score / 100.0) * circumference
+
+    if score >= 75 or "study" in label_lower or "high" in label_lower:
+        color = "#EF4444"
+        bg_ring = "#3B1219"
+    elif score >= 50 or "medium" in label_lower or "moderate" in label_lower:
+        color = "#F59E0B"
+        bg_ring = "#3D2B0F"
+    else:
+        color = "#10B981"
+        bg_ring = "#0F3323"
+
+    return f"""
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">
+        <div style="position: relative; width: 140px; height: 140px;">
+            <svg width="140" height="140" viewBox="0 0 140 140" style="transform: rotate(-90deg);">
+                <circle cx="70" cy="70" r="{radius}" fill="none" stroke="{bg_ring}" stroke-width="12" />
+                <circle cx="70" cy="70" r="{radius}" fill="none" stroke="{color}" stroke-width="12"
+                    stroke-dasharray="{circumference}" stroke-dashoffset="{stroke_offset}" stroke-linecap="round" />
+            </svg>
+            <div style="position: absolute; top: 0; left: 0; width: 140px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                <span style="font-size: 2rem; font-weight: 800; color: #FFFFFF; line-height: 1;">{score}</span>
+                <span style="font-size: 0.75rem; font-weight: 700; color: #94A3B8; margin-top: 2px;">/ 100</span>
+            </div>
+        </div>
+        <div style="margin-top: 12px; text-align: center;">
+            <span style="background-color: {bg_ring}; color: {color}; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 0.8rem; letter-spacing: 0.05em; border: 1px solid {color}66;">
+                {label_clean}
+            </span>
+            <div style="font-size: 0.75rem; color: #94A3B8; font-weight: 600; margin-top: 6px;">
+                Evidence Study Priority
+            </div>
+        </div>
+    </div>
+    """
+
+
+def render_fintech_score_ring(*args, **kwargs) -> str:
+    """
+    Renders score ring gauge. Supports (score, total, label), (score, label), or keyword args.
+    """
+    score = 0
+    total = 10
+    label = "Concept Score"
+
+    if "score" in kwargs:
+        try:
+            score = int(kwargs["score"])
+        except (ValueError, TypeError):
+            pass
+    if "total" in kwargs:
+        try:
+            total = int(kwargs["total"])
+        except (ValueError, TypeError):
+            pass
+    if "label" in kwargs:
+        label = str(kwargs["label"])
+
+    if len(args) == 1:
+        try:
+            score = int(args[0])
+        except (ValueError, TypeError):
+            pass
+    elif len(args) == 2:
+        try:
+            score = int(args[0])
+        except (ValueError, TypeError):
+            pass
+        if isinstance(args[1], (int, float)):
+            total = int(args[1])
+        else:
+            label = str(args[1])
+    elif len(args) >= 3:
+        try:
+            score = int(args[0])
+            total = int(args[1])
+            label = str(args[2])
+        except (ValueError, TypeError):
+            pass
+
+    pct = (score / float(total)) if total > 0 else 0
+    radius = 54
+    circumference = 2 * 3.14159 * radius
+    stroke_offset = circumference - (pct * circumference)
+
+    if score >= int(total * 0.8):
+        color = "#10B981"
+        bg_ring = "#0F3323"
+    elif score >= int(total * 0.5):
+        color = "#F59E0B"
+        bg_ring = "#3D2B0F"
+    else:
+        color = "#EF4444"
+        bg_ring = "#3B1219"
+
+    return f"""
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">
+        <div style="position: relative; width: 140px; height: 140px;">
+            <svg width="140" height="140" viewBox="0 0 140 140" style="transform: rotate(-90deg);">
+                <circle cx="70" cy="70" r="{radius}" fill="none" stroke="{bg_ring}" stroke-width="12" />
+                <circle cx="70" cy="70" r="{radius}" fill="none" stroke="{color}" stroke-width="12"
+                    stroke-dasharray="{circumference}" stroke-dashoffset="{stroke_offset}" stroke-linecap="round" />
+            </svg>
+            <div style="position: absolute; top: 0; left: 0; width: 140px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                <span style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; line-height: 1;">{score}</span>
+                <span style="font-size: 0.8rem; font-weight: 700; color: #94A3B8; margin-top: 2px;">/ {total}</span>
+            </div>
+        </div>
+        <div style="margin-top: 12px; text-align: center;">
+            <div style="font-size: 0.9rem; font-weight: 800; color: #FFFFFF;">
+                {label}
+            </div>
+            <div style="font-size: 0.75rem; color: #94A3B8; font-weight: 600;">
+                {round(pct * 100)}% Accuracy
+            </div>
+        </div>
+    </div>
+    """
+
+
+def render_concept_diagram_html(*args, **kwargs) -> str:
+    """
+    Renders visual concept flowchart HTML.
+    Supports:
+    - Single dict: render_concept_diagram_html(diagram_data)
+    - Keyword arguments: render_concept_diagram_html(title=..., nodes=..., connections=..., memory_hook=...)
+    - Positional arguments: render_concept_diagram_html(title, nodes, connections)
+    """
+    diagram_data: dict[str, Any] = {}
+    if args:
+        if isinstance(args[0], dict):
+            diagram_data = dict(args[0])
+        elif isinstance(args[0], str):
+            diagram_data["title"] = args[0]
+            if len(args) > 1 and isinstance(args[1], list):
+                diagram_data["nodes"] = args[1]
+            if len(args) > 2 and isinstance(args[2], list):
+                diagram_data["connections"] = args[2]
+
+    for k, v in kwargs.items():
+        diagram_data[k] = v
+
+    title = str(diagram_data.get("title") or "Visual Concept Flow")
+    nodes = diagram_data.get("nodes") or []
+    connections = diagram_data.get("connections") or []
+    hook = str(diagram_data.get("memory_hook") or "")
+
+    cards_html = []
+    for i, node in enumerate(nodes):
+        node_step = f"0{i+1}" if i < 9 else str(i+1)
+        card_content = f"""
+        <div style="flex: 1; min-width: 170px; max-width: 220px; background: #131B2E; border: 1.5px solid #334155; border-radius: 16px; padding: 16px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); margin: 8px; text-align: center;">
+            <div style="font-size: 0.7rem; font-weight: 800; color: #818CF8; letter-spacing: 0.1em; text-transform: uppercase;">STEP {node_step}</div>
+            <div style="font-size: 0.95rem; font-weight: 700; color: #FFFFFF; margin-top: 6px; line-height: 1.4;">{node}</div>
+        </div>
+        """
+        cards_html.append(card_content)
+
+        if i < len(nodes) - 1:
+            edge_label = ""
+            if i < len(connections):
+                edge_label = connections[i][2] if len(connections[i]) > 2 else ""
+
+            arrow = f"""
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 4px 0;">
+                <span style="font-size: 0.65rem; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; background: #1E293B; padding: 2px 6px; border-radius: 4px; margin-bottom: 2px;">{edge_label}</span>
+                <span style="color: #818CF8; font-size: 1.4rem; font-weight: 800;">→</span>
+            </div>
+            """
+            cards_html.append(arrow)
+
+    flow_content = "".join(cards_html)
+    memory_rule_html = ""
+    if hook:
+        memory_rule_html = f"""
+        <div style="margin-top: 24px; background: #18182E; border-radius: 12px; padding: 14px 20px; border-left: 4px solid #6366F1; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+                <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; text-transform: uppercase; letter-spacing: 0.05em;">CORE MEMORY RULE</span>
+                <div style="font-size: 0.95rem; font-weight: 700; color: #E0E7FF; margin-top: 2px;">{hook}</div>
+            </div>
+            <span style="font-size: 1.5rem;">🧠</span>
+        </div>
+        """
+
+    return f"""
+    <div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 20px; padding: 28px; box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.4); margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1E293B; padding-bottom: 14px; margin-bottom: 20px;">
+            <div>
+                <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">VISUAL CONCEPT FLOW</span>
+                <h3 style="font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 0 0;">{title}</h3>
+            </div>
+            <span style="background-color: #1E1B4B; color: #C7D2FE; padding: 6px 14px; border-radius: 9999px; font-size: 0.8rem; font-weight: 700; border: 1px solid #4338CA;">
+                Infographic Architecture
+            </span>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 10px 0;">
+            {flow_content}
+        </div>
+
+        {memory_rule_html}
+    </div>
+    """
+
+
+def get_quiz_timer_state(*args, **kwargs) -> tuple[int, str, bool]:
+    """
+    Returns (remaining_seconds, formatted_string, is_expired).
+    Accepts total_seconds positionally, via kwargs total_seconds=..., or defaults to 600.
+    """
+    total_seconds = 600
+    if args and isinstance(args[0], (int, float)):
+        total_seconds = int(args[0])
+    elif "total_seconds" in kwargs and kwargs["total_seconds"] is not None:
+        try:
+            total_seconds = int(kwargs["total_seconds"])
+        except (ValueError, TypeError):
+            total_seconds = 600
+
+    if "quiz_started_at" not in st.session_state or st.session_state.quiz_started_at is None:
+        st.session_state.quiz_started_at = time.time()
+
+    elapsed = time.time() - st.session_state.quiz_started_at
+    remaining = max(0, int(total_seconds - elapsed))
+
+    mins = remaining // 60
+    secs = remaining % 60
+    formatted = f"{mins:02d}:{secs:02d}"
+    is_expired = (remaining <= 0)
+
+    return remaining, formatted, is_expired
+
+
+def reset_quiz_timer():
+    st.session_state.quiz_started_at = time.time()
+
+
 def init_session_state():
-    """Initializes persistent application session state defaults."""
     defaults = {
         "page": "analyze",
         "subject": "Biology",
         "exam": "MDCAT",
         "query": "",
+        "retrieved_chunks": [],
         "analysis": None,
-        "quiz": None,
+        "quiz_questions": [],
+        "quiz_answers": {},
+        "quiz_started_at": None,
         "quiz_submitted": False,
-        "user_answers": {},
-        "quiz_score": 0,
-        "quiz_start_time": None,
-        "quiz_time_taken": 0,
-        "viewed_sources": [],
-        "groq_api_key": "",
+        "quiz_result": None,
+        "student_accuracy": None,
     }
-    for key, val in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = val
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
 
 def navigate_to(page_name: str):
-    """Updates the active navigation page in session state."""
     st.session_state.page = page_name
     st.rerun()
-
-
-def render_fintech_priority_ring(priority_level: str, size: int = 120) -> str:
-    """
-    Renders an SVG ring indicator for exam priority (High/Medium/Low).
-    """
-    levels = {
-        "high": {"percent": 92, "color": "#EF4444", "label": "HIGH", "bg": "#450A0A"},
-        "medium": {"percent": 65, "color": "#F59E0B", "label": "MED", "bg": "#451A03"},
-        "low": {"percent": 35, "color": "#10B981", "label": "LOW", "bg": "#022C22"},
-    }
-    cfg = levels.get(priority_level.lower(), levels["high"])
-    stroke_dashoffset = 283 - (283 * cfg["percent"] / 100)
-
-    return f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-        <svg width="{size}" height="{size}" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="45" fill="none" stroke="#1E293B" stroke-width="8"/>
-            <circle cx="50" cy="50" r="45" fill="none" stroke="{cfg['color']}" stroke-width="8"
-                    stroke-dasharray="283" stroke-dashoffset="{stroke_dashoffset}"
-                    stroke-linecap="round" transform="rotate(-90 50 50)"/>
-            <text x="50" y="54" text-anchor="middle" font-family="'Plus Jakarta Sans', sans-serif"
-                  font-size="16" font-weight="800" fill="#FFFFFF">{cfg['label']}</text>
-        </svg>
-        <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.05em;">
-            EXAM YIELD
-        </div>
-    </div>
-    """
-
-
-def render_fintech_score_ring(score: int, total: int = 10, size: int = 130) -> str:
-    """
-    Renders an SVG score progress ring for the quiz results screen.
-    """
-    pct = int((score / total) * 100) if total > 0 else 0
-    stroke_dashoffset = 283 - (283 * pct / 100)
-    color = "#10B981" if pct >= 70 else ("#F59E0B" if pct >= 50 else "#EF4444")
-
-    return f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-        <svg width="{size}" height="{size}" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="45" fill="none" stroke="#1E293B" stroke-width="8"/>
-            <circle cx="50" cy="50" r="45" fill="none" stroke="{color}" stroke-width="8"
-                    stroke-dasharray="283" stroke-dashoffset="{stroke_dashoffset}"
-                    stroke-linecap="round" transform="rotate(-90 50 50)"/>
-            <text x="50" y="48" text-anchor="middle" font-family="'Plus Jakarta Sans', sans-serif"
-                  font-size="20" font-weight="800" fill="#FFFFFF">{score}/{total}</text>
-            <text x="50" y="65" text-anchor="middle" font-family="'Plus Jakarta Sans', sans-serif"
-                  font-size="10" font-weight="700" fill="#94A3B8">{pct}%</text>
-        </svg>
-        <div style="font-size: 0.75rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin-top: 6px; letter-spacing: 0.05em;">
-            ACCURACY SCORE
-        </div>
-    </div>
-    """
-
-
-def render_concept_diagram_html(diagram_spec: dict[str, Any]) -> str:
-    """
-    Renders an HTML/SVG flowchart card for Concept Diagrams.
-    """
-    steps = diagram_spec.get("steps", [])
-    if not steps:
-        steps = [
-            {"title": "Initial State", "desc": "Substrate approaches active site"},
-            {"title": "Inhibitor Action", "desc": "Inhibitor binds or alters conformation"},
-            {"title": "Kinetic Outcome", "desc": "Km or Vmax changes accordingly"},
-        ]
-
-    steps_html = ""
-    for idx, step in enumerate(steps):
-        is_last = (idx == len(steps) - 1)
-        steps_html += f"""
-        <div style="flex: 1; min-width: 170px; background-color: #1E293B; border: 1.5px solid #334155; border-radius: 14px; padding: 16px; position: relative;">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                <span style="background-color: #6366F1; color: #FFFFFF; font-size: 0.72rem; font-weight: 800; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                    {idx + 1}
-                </span>
-                <span style="font-size: 0.88rem; font-weight: 800; color: #FFFFFF;">
-                    {step.get('title', 'Step')}
-                </span>
-            </div>
-            <div style="font-size: 0.8rem; color: #94A3B8; line-height: 1.4;">
-                {step.get('desc', '')}
-            </div>
-        </div>
-        """
-        if not is_last:
-            steps_html += """
-            <div style="display: flex; align-items: center; justify-content: center; padding: 0 6px; color: #6366F1; font-size: 1.3rem; font-weight: 800;">
-                →
-            </div>
-            """
-
-    return f"""
-    <div style="background-color: #0F172A; border: 1.5px solid #1E293B; border-radius: 20px; padding: 22px; margin: 16px 0;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <div style="font-size: 0.82rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
-                {diagram_spec.get('type', 'CONCEPT FLOWCHART').upper()}
-            </div>
-            <div style="font-size: 0.78rem; color: #94A3B8; font-weight: 600;">
-                {diagram_spec.get('title', 'Mental Model')}
-            </div>
-        </div>
-        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-            {steps_html}
-        </div>
-    </div>
-    """
-
-
-def get_quiz_timer_state() -> int:
-    """Tracks elapsed time during quiz session."""
-    if st.session_state.quiz_start_time is None:
-        st.session_state.quiz_start_time = time.time()
-        return 0
-    return int(time.time() - st.session_state.quiz_start_time)
-
-
-def reset_quiz_timer():
-    """Resets quiz timer on new quiz start."""
-    st.session_state.quiz_start_time = time.time()
