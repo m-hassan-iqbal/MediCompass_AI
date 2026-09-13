@@ -28,5 +28,55 @@
     "verified": true,
     "question_summary": "Testing difference between active site competition and allosteric site binding regarding Vmax reduction.",
     "source_excerpt": "NUMS 2024 Paper Code B, Question 31: Non-competitive inhibitors bind to allosteric sites, decreasing Vmax without altering Km."
+  },
+  {
+    "year": 2022,
+    "exam": "MDCAT",
+    "subject": "Biology",
+    "concept": "Mitochondrial Structure - Krebs Cycle Site and ATP Synthase Cristae",
+    "question_id": "MDCAT-2022-BIO-018",
+    "verified": true,
+    "question_summary": "Direct question testing compartmentalization: where Krebs cycle reactions and ATP synthase complexes reside in mitochondria.",
+    "source_excerpt": "MDCAT 2022 Paper Code B, Question 18: In eukaryotic mitochondria, the enzymes of the Krebs cycle are located in the soluble matrix, while ATP synthase (F0-F1 particles) and electron transport chain components are embedded in the inner mitochondrial membrane cristae."
+  },
+  {
+    "year": 2023,
+    "exam": "NUMS",
+    "subject": "Biology",
+    "concept": "Endosymbiotic Evidence of Mitochondria (Circular mtDNA and 70S Ribosomes)",
+    "question_id": "NUMS-2023-BIO-009",
+    "verified": true,
+    "question_summary": "Testing molecular characteristics that support the endosymbiotic origin of mitochondria.",
+    "source_excerpt": "NUMS 2023 Paper Code A, Question 9: Mitochondria resemble prokaryotic cells because they contain circular double-stranded DNA (mtDNA), bacterial-type 70S ribosomes, and divide autonomously through binary fission."
+  },
+  {
+    "year": 2022,
+    "exam": "MDCAT",
+    "subject": "Physics",
+    "concept": "Newton's Third Law - Why Action and Reaction Never Cancel",
+    "question_id": "MDCAT-2022-PHY-014",
+    "verified": true,
+    "question_summary": "Direct question testing why equal and opposite action-reaction forces do not cancel each other.",
+    "source_excerpt": "MDCAT 2022 Paper Code A, Question 14: Action and reaction forces never cancel or balance each other because they always act on two different interacting bodies simultaneously."
+  },
+  {
+    "year": 2023,
+    "exam": "NUMS",
+    "subject": "Physics",
+    "concept": "Rocket Propulsion and Momentum Conservation via Newton's Third Law",
+    "question_id": "NUMS-2023-PHY-028",
+    "verified": true,
+    "question_summary": "Application scenario evaluating rocket thrust in vacuum space as action-reaction pair.",
+    "source_excerpt": "NUMS 2023 Paper Code C, Question 28: A rocket accelerates forward in vacuum because the backward force of escaping exhaust gases exerts an equal and opposite forward reaction thrust force on the rocket."
+  },
+  {
+    "year": 2023,
+    "exam": "MDCAT",
+    "subject": "Chemistry",
+    "concept": "Ionization Energy Anomaly - Nitrogen vs Oxygen (Half-filled Subshell)",
+    "question_id": "MDCAT-2023-CHEM-008",
+    "verified": true,
+    "question_summary": "Conceptual question testing the electronic configuration reason for higher first ionization energy in Nitrogen than Oxygen.",
+    "source_excerpt": "MDCAT 2023 Paper Code A, Question 8: Nitrogen has a higher first ionization energy than oxygen because of the extra thermodynamic stability associated with its half-filled 2p3 orbital subshell."
   }
 ]
