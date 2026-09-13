@@ -5,7 +5,10 @@ Turning exam information into study intelligence for MDCAT and NUMS aspirants.
 
 import os
 import time
+import logging
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 from data_ingestion import (
     build_knowledge_base_chunks,
@@ -39,7 +42,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Apply fintech CSS styling
+# Apply solid black fintech styling
 apply_custom_styles()
 
 # Initialize session state variables
@@ -60,26 +63,53 @@ def get_initialized_vector_store():
     fp = compute_kb_fingerprint(SOURCES_DIR, MANIFEST_PATH)
     vs = LocalVectorStore(cache_dir=CACHE_DIR)
 
-    # Try loading cached index first, self-heal if missing or empty
-    if not vs.load_cached_index(fp) or len(vs.chunks) == 0:
-        chunks = build_knowledge_base_chunks(
-            sources_dir=SOURCES_DIR,
-            manifest_path=MANIFEST_PATH,
-            past_papers_path=PAST_PAPERS_PATH,
-        )
-        vs.build_index(chunks, fp)
+    chunks = build_knowledge_base_chunks(
+        sources_dir=SOURCES_DIR,
+        manifest_path=MANIFEST_PATH,
+        past_papers_path=PAST_PAPERS_PATH,
+    )
+    vs.build_index(chunks, fp)
 
     return vs, fp
 
 
+# ─── SECRETS & DRIVE AUTO-SYNC ────────────────────────────────────────────────
+drive_urls_raw = st.secrets.get("GOOGLE_DRIVE_FOLDER_URLS", os.environ.get("GOOGLE_DRIVE_FOLDER_URLS", ""))
+has_secret_urls = bool(
+    drive_urls_raw
+    and drive_urls_raw.strip()
+    and any(not l.strip().startswith("#") for l in drive_urls_raw.splitlines() if l.strip())
+)
+
+# Auto-sync Google Drive on startup if configured in secrets and sources contains only seed files
+if has_secret_urls and "drive_auto_synced" not in st.session_state:
+    st.session_state.drive_auto_synced = True
+    secret_links = [
+        u.strip()
+        for u in drive_urls_raw.splitlines()
+        if u.strip() and not u.strip().startswith("#")
+    ]
+    if secret_links:
+        existing_pdfs = [f for f in os.listdir(SOURCES_DIR) if f.lower().endswith(".pdf")] if os.path.exists(SOURCES_DIR) else []
+        if len(existing_pdfs) <= 3:
+            logger.info(f"Auto-syncing {len(secret_links)} Google Drive source(s) from configuration...")
+            try:
+                downloaded = sync_google_drive_public_folders(secret_links, SOURCES_DIR)
+                if downloaded:
+                    st.cache_resource.clear()
+            except Exception as sync_e:
+                logger.error(f"Auto-sync failed: {sync_e}")
+
 # Retrieve vector store
 vector_store, current_fingerprint = get_initialized_vector_store()
 
-# Initialize Groq Client
-groq_api_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
+# Initialize Groq Client & Session API Key
+if "groq_api_key" not in st.session_state:
+    st.session_state.groq_api_key = st.secrets.get("GROQ_API_KEY", os.environ.get("GROQ_API_KEY", ""))
+
 groq_model = st.secrets.get("GROQ_MODEL", os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"))
-groq_client = GroqClient(api_key=groq_api_key, model=groq_model)
-quiz_gen = QuizGenerator(api_key=groq_api_key, model=groq_model)
+groq_client = GroqClient(api_key=st.session_state.groq_api_key, model=groq_model)
+quiz_gen = QuizGenerator(api_key=st.session_state.groq_api_key, model=groq_model)
 
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────────────────
@@ -148,39 +178,80 @@ with st.sidebar:
     # System Status
     chunk_count = len(vector_store.chunks)
     groq_ready = groq_client.is_configured()
+    num_source_files = len([f for f in os.listdir(SOURCES_DIR) if f.lower().endswith(".pdf")]) if os.path.exists(SOURCES_DIR) else 0
 
     st.markdown("<div style='font-size: 0.78rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;'>SYSTEM STATUS</div>", unsafe_allow_html=True)
     st.markdown(
         f"""
         <div style="font-size: 0.82rem; color: #CBD5E1; line-height: 1.7; background: #0F172A; border: 1.5px solid #1E293B; border-radius: 12px; padding: 12px 14px;">
             <div>• Knowledge Chunks: <b style="color: #FFFFFF;">{chunk_count} verified</b></div>
-            <div>• Model: <b style="color: #FFFFFF;">{groq_model}</b></div>
-            <div>• Mode: <span style="color: {'#4ADE80' if groq_ready else '#FBBF24'}; font-weight: 800;">{'Live Groq API' if groq_ready else 'Verified Seed Demo'}</span></div>
+            <div>• Source Books: <b style="color: #FFFFFF;">{num_source_files} PDFs</b></div>
+            <div>• Mode: <span style="color: {'#4ADE80' if groq_ready else '#38BDF8'}; font-weight: 800;">{'🟢 Live Groq AI' if groq_ready else '⚡ Textbook RAG'}</span></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if not groq_ready:
-        st.caption("Add GROQ_API_KEY to Streamlit Secrets to enable arbitrary query generation.")
-
-    if chunk_count == 0 or st.button("⚡ Reload Knowledge Base", key="reload_kb", use_container_width=True):
-        st.cache_resource.clear()
-        st.rerun()
-
-    # Google Drive Sync Trigger (via Secrets or Direct UI Paste)
-    drive_urls_raw = st.secrets.get("GOOGLE_DRIVE_FOLDER_URLS", "")
-    has_secret_urls = bool(
-        drive_urls_raw
-        and drive_urls_raw.strip()
-        and any(not l.strip().startswith("#") for l in drive_urls_raw.splitlines() if l.strip())
-    )
-
-    with st.expander("🔗 Connect Google Drive Sources", expanded=False):
+    # Groq API Key Setup Expander
+    with st.expander("🔑 Groq API Key (Free Instant)", expanded=not groq_ready):
         st.markdown(
-            "<div style='font-size: 0.8rem; color: #94A3B8; margin-bottom: 8px; line-height: 1.4;'>"
-            "Paste your public Google Drive folder or PDF links below.<br/>"
-            "<span style='color: #818CF8;'>Note:</span> Sharing must be set to <b>Anyone with the link (Viewer)</b>."
+            "<div style='font-size: 0.78rem; color: #94A3B8; margin-bottom: 8px; line-height: 1.4;'>"
+            "Paste your free Groq key to activate live <b>Llama-3.3-70B</b> AI reasoning for any topic.<br/>"
+            "<a href='https://console.groq.com/keys' target='_blank' style='color: #818CF8; font-weight: 700;'>➔ Get Free Key in 30 seconds</a>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        groq_key_input = st.text_input(
+            "Groq API Key",
+            value=st.session_state.groq_api_key,
+            type="password",
+            placeholder="gsk_...",
+            key="input_groq_api_key",
+            label_visibility="collapsed",
+        )
+        if groq_key_input != st.session_state.groq_api_key:
+            st.session_state.groq_api_key = groq_key_input
+            st.rerun()
+
+    # Add Books & Past Papers Expander
+    with st.expander("📚 Add Books & Past Papers", expanded=(chunk_count <= 7)):
+        st.markdown(
+            "<div style='font-size: 0.78rem; color: #94A3B8; margin-bottom: 6px; line-height: 1.4; font-weight: 600;'>"
+            "Option 1: Upload PDFs Directly (Fastest)"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        uploaded_pdfs = st.file_uploader(
+            "Upload Book / Past Paper PDFs",
+            type=["pdf"],
+            accept_multiple_files=True,
+            key="pdf_file_uploader",
+            label_visibility="collapsed",
+            help="Upload Punjab/Federal textbooks or past paper PDFs directly into MediCompass."
+        )
+        if uploaded_pdfs:
+            saved_count = 0
+            for upf in uploaded_pdfs:
+                dest = os.path.join(SOURCES_DIR, upf.name)
+                if not os.path.exists(dest):
+                    with open(dest, "wb") as f:
+                        f.write(upf.getbuffer())
+                    saved_count += 1
+            if saved_count > 0:
+                st.cache_resource.clear()
+                st.success(f"Added {saved_count} new PDF(s)! Updating index...")
+                time.sleep(1.0)
+                st.rerun()
+
+        st.markdown(
+            "<div style='font-size: 0.78rem; color: #94A3B8; margin-top: 12px; margin-bottom: 6px; line-height: 1.4; font-weight: 600;'>"
+            "Option 2: Sync Public Google Drive Links"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div style='font-size: 0.74rem; color: #64748B; margin-bottom: 6px; line-height: 1.3;'>"
+            "Must be set to <b>Anyone with the link (Viewer)</b>."
             "</div>",
             unsafe_allow_html=True,
         )
@@ -188,11 +259,11 @@ with st.sidebar:
             "Drive Links",
             value="" if not has_secret_urls else drive_urls_raw.strip(),
             placeholder="https://drive.google.com/drive/folders/YOUR_FOLDER_ID\nhttps://drive.google.com/file/d/YOUR_FILE_ID/view",
-            height=90,
+            height=70,
             label_visibility="collapsed",
             key="gdrive_input_box",
         )
-        if st.button("📥 Sync & Ingest Drive Sources", key="btn_sync_gdrive", type="primary", use_container_width=True):
+        if st.button("📥 Sync Google Drive", key="btn_sync_gdrive", type="primary", use_container_width=True):
             target_links = [
                 u.strip()
                 for u in user_drive_input.splitlines()
@@ -209,7 +280,11 @@ with st.sidebar:
                         time.sleep(1.2)
                         st.rerun()
                     else:
-                        st.error("Download failed or no files found. Make sure General Access is set to 'Anyone with the link' (Viewer).")
+                        st.error("No files downloaded. Check that link is set to 'Anyone with the link can view' or use Direct Upload above.")
+
+    if st.button("⚡ Reload Knowledge Base", key="reload_kb", use_container_width=True):
+        st.cache_resource.clear()
+        st.rerun()
 
 
 # ─── PAGE 1: ANALYZE ──────────────────────────────────────────────────────────
@@ -371,6 +446,21 @@ elif st.session_state.page == "concept":
         unsafe_allow_html=True,
     )
 
+    if not groq_ready:
+        st.markdown(
+            """
+            <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 10px 14px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between;">
+                <div style="font-size: 0.84rem; color: #E0F2FE;">
+                    <b>⚡ Direct Textbook RAG Mode:</b> Synthesized directly from your ingested curriculum documents.
+                </div>
+                <div style="font-size: 0.8rem; color: #38BDF8; font-weight: 700;">
+                    Add your free Groq Key in the sidebar for full Llama-3.3 dynamic reasoning
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     # 3 Primary Action Buttons
     b1, b2, b3 = st.columns(3)
     with b1:
@@ -419,7 +509,6 @@ elif st.session_state.page == "concept":
         p_label = analysis.get("priority_label", "STUDY NOW")
         ring_svg = render_fintech_priority_ring(p_score, p_label)
 
-        # Dynamic formula explanation based on whether student has attempted the quiz
         accuracy = st.session_state.student_accuracy
         if accuracy is None:
             perf_text = "⚠ Personal performance: Not available yet (Take 10-MCQ quiz to calibrate)"
@@ -661,7 +750,7 @@ elif st.session_state.page == "quiz":
                 <div class="fintech-card" style="text-align: center;">
                     {score_ring}
                     <div style="margin-top: 10px;">
-                        <span style="background: {result['color_theme']}1A; color: {result['color_theme']}; font-weight: 800; padding: 4px 12px; border-radius: 9999px; font-size: 0.8rem; border: 1px solid {result['color_theme']}33;">
+                        <span style="background: {result['mastery_color']}1A; color: {result['mastery_color']}; font-weight: 800; padding: 4px 12px; border-radius: 9999px; font-size: 0.8rem; border: 1px solid {result['mastery_color']}33;">
                             {result['mastery_label']}
                         </span>
                     </div>
@@ -681,7 +770,7 @@ elif st.session_state.page == "quiz":
                         {result['mastery_label']}
                     </h3>
                     <p style="font-size: 1.02rem; color: #CBD5E1; line-height: 1.6;">
-                        {result['action_message']}
+                        {result['recommendation']}
                     </p>
                     <div style="margin-top: 16px; padding: 12px 16px; background: #080B11; border: 1px solid #1E293B; border-radius: 12px; font-size: 0.88rem; color: #94A3B8;">
                         Your performance score has been calibrated into your <b>Evidence Study Priority</b>.
@@ -694,7 +783,7 @@ elif st.session_state.page == "quiz":
         # Question Review Section
         st.markdown("<h3 style='font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 24px 0 16px 0;'>Detailed Question Breakdown</h3>", unsafe_allow_html=True)
 
-        for item in result["detailed_results"]:
+        for item in result["breakdown"]:
             q_id = item["id"]
             is_correct = item["is_correct"]
             status_symbol = "✓ Correct" if is_correct else "✕ Incorrect"
@@ -717,7 +806,7 @@ elif st.session_state.page == "quiz":
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
                         <div style="padding: 8px 12px; background: #080B11; border: 1px solid #1E293B; border-radius: 8px; font-size: 0.88rem;">
                             <span style="color: #94A3B8; font-weight: 600;">Your choice:</span>
-                            <b style="color: {'#4ADE80' if is_correct else '#F87171'}; margin-left: 6px;">{item['user_answer']}</b>
+                            <b style="color: {'#4ADE80' if is_correct else '#F87171'}; margin-left: 6px;">{item['user_choice'] or 'None'}</b>
                         </div>
                         <div style="padding: 8px 12px; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.25); border-radius: 8px; font-size: 0.88rem;">
                             <span style="color: #4ADE80; font-weight: 600;">Correct answer:</span>
