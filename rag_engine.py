@@ -1,116 +1,156 @@
 """
-MediCompass AI - RAG Retrieval & Groq Synthesis Engine
-Handles vector store retrieval, prompt orchestration, Groq LLM integration,
-dynamic textbook extraction fallback, and multi-source evidence synthesis.
+MediCompass AI - RAG Retrieval & Groq Analysis Engine
+Manages document embeddings, vector similarity search with source diversity,
+and Groq LLM structured inference with grounded-first safety.
 """
 
-import os
+import hashlib
 import json
 import logging
+import os
+import pickle
 import re
 from typing import Any, Optional
+
+import numpy as np
+
 from data_ingestion import DocumentChunk
 import prompts
 
 logger = logging.getLogger(__name__)
 
-
-def build_compact_context(chunks: list[DocumentChunk]) -> str:
-    """Formats retrieved chunks into concise, source-labeled markdown context."""
-    if not chunks:
-        return "No specific verified textbook chunks retrieved. Ground strictly on PMDC/NUMS syllabus guidelines."
-
-    sections = []
-    for c in chunks:
-        label = f"[{c.id}] {c.source_type} - {c.title}"
-        if c.chapter:
-            label += f" ({c.chapter})"
-        if c.page != "unknown":
-            label += f" [Page {c.page}]"
-
-        clean_content = c.text.strip().replace("\n\n", "\n")
-        sections.append(f"### Source: {label}\n{clean_content}")
-
-    return "\n\n---\n\n".join(sections)
+# Lightweight embeddings loader with fallback support
+_EMBEDDING_MODEL = None
 
 
-def clean_json_response(raw_text: str) -> str:
-    """Removes Markdown code blocks and surrounding whitespace from LLM JSON response."""
-    text = raw_text.strip()
-    if text.startswith("```json"):
-        text = text[7:]
-    elif text.startswith("```"):
-        text = text[3:]
-    if text.endswith("```"):
-        text = text[:-3]
-    return text.strip()
+def get_embedding_model():
+    """Loads and caches the sentence-transformers model."""
+    global _EMBEDDING_MODEL
+    if _EMBEDDING_MODEL is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _EMBEDDING_MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            logger.info("Loaded sentence-transformers/all-MiniLM-L6-v2 successfully.")
+        except Exception as e:
+            logger.warning(f"sentence-transformers not available ({e}). Using lightweight bag-of-words vectorizer.")
+            _EMBEDDING_MODEL = "fallback_bow"
+    return _EMBEDDING_MODEL
+
+
+class FallbackBOWVectorizer:
+    """Lightweight token-overlap cosine similarity vectorizer when PyTorch/Transformers isn't installed."""
+
+    def __init__(self):
+        self.vocab: dict[str, int] = {}
+
+    def fit_transform(self, texts: list[str]) -> np.ndarray:
+        words_set = set()
+        tokenized_docs = []
+        for t in texts:
+            tokens = re.findall(r"\b[a-zA-Z0-9_-]{2,}\b", t.lower())
+            tokenized_docs.append(tokens)
+            words_set.update(tokens)
+
+        self.vocab = {w: i for i, w in enumerate(sorted(words_set))}
+        dim = len(self.vocab)
+        if dim == 0:
+            return np.zeros((len(texts), 1), dtype=np.float32)
+
+        matrix = np.zeros((len(texts), dim), dtype=np.float32)
+        for i, tokens in enumerate(tokenized_docs):
+            for tok in tokens:
+                if tok in self.vocab:
+                    matrix[i, self.vocab[tok]] += 1.0
+
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        return matrix / norms
+
+    def transform(self, texts: list[str]) -> np.ndarray:
+        if not self.vocab:
+            return np.zeros((len(texts), 1), dtype=np.float32)
+
+        dim = len(self.vocab)
+        matrix = np.zeros((len(texts), dim), dtype=np.float32)
+        for i, t in enumerate(texts):
+            tokens = re.findall(r"\b[a-zA-Z0-9_-]{2,}\b", t.lower())
+            for tok in tokens:
+                if tok in self.vocab:
+                    matrix[i, self.vocab[tok]] += 1.0
+
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        return matrix / norms
 
 
 class LocalVectorStore:
-    """
-    Lightweight in-memory vector store using cosine similarity over TF-IDF / sentence embeddings,
-    with local disk caching and fingerprint validation.
-    """
+    """Stores chunks and embeddings, providing cosine similarity retrieval with metadata filters."""
 
     def __init__(self, cache_dir: str = "cache"):
         self.cache_dir = cache_dir
         self.chunks: list[DocumentChunk] = []
-        self.vectors = None
-        self.vectorizer = None
-        self.fingerprint = ""
-        os.makedirs(cache_dir, exist_ok=True)
+        self.embeddings: Optional[np.ndarray] = None
+        self.bow_vectorizer: Optional[FallbackBOWVectorizer] = None
+        self.fingerprint: str = ""
 
     def build_index(self, chunks: list[DocumentChunk], fingerprint: str) -> None:
-        """Builds index from chunks or loads from cache if fingerprint matches."""
-        cache_file = os.path.join(self.cache_dir, f"kb_index_{fingerprint}.pkl")
+        """Embeds all document chunks and saves to memory."""
         self.chunks = chunks
         self.fingerprint = fingerprint
 
-        if os.path.exists(cache_file):
-            try:
-                import pickle
-                with open(cache_file, "rb") as f:
-                    data = pickle.load(f)
-                    self.chunks = data["chunks"]
-                    self.vectors = data["vectors"]
-                    self.vectorizer = data["vectorizer"]
-                    logger.info(f"Loaded {len(self.chunks)} knowledge chunks from cache.")
-                    return
-            except Exception as e:
-                logger.warning(f"Failed to load cached index: {e}. Recomputing.")
+        if not chunks:
+            self.embeddings = None
+            return
 
-        # Compute embeddings / vectors
-        self._compute_vectors()
+        texts = [f"{c.title} {c.chapter} {c.text}" for c in chunks]
+        model = get_embedding_model()
 
-        # Save cache
+        if model == "fallback_bow" or model is None:
+            self.bow_vectorizer = FallbackBOWVectorizer()
+            self.embeddings = self.bow_vectorizer.fit_transform(texts)
+        else:
+            emb = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+            self.embeddings = emb.astype(np.float32)
+
+        self.save_index()
+
+    def save_index(self) -> None:
+        """Persists indexed chunks and embeddings to disk."""
+        if not self.fingerprint:
+            return
+        os.makedirs(self.cache_dir, exist_ok=True)
+        cache_path = os.path.join(self.cache_dir, f"kb_index_{self.fingerprint}.pkl")
         try:
-            import pickle
-            with open(cache_file, "wb") as f:
+            with open(cache_path, "wb") as f:
                 pickle.dump(
                     {
-                        "chunks": self.chunks,
-                        "vectors": self.vectors,
-                        "vectorizer": self.vectorizer,
+                        "fingerprint": self.fingerprint,
+                        "chunks": [c.to_dict() for c in self.chunks],
+                        "embeddings": self.embeddings,
+                        "bow_vectorizer": self.bow_vectorizer,
                     },
                     f,
                 )
-            logger.info(f"Cached {len(self.chunks)} knowledge chunks with fingerprint {fingerprint}.")
         except Exception as e:
-            logger.error(f"Failed to save cache: {e}")
+            logger.warning(f"Failed to cache index: {e}")
 
-    def _compute_vectors(self) -> None:
-        """Computes TF-IDF or embedding vectors for indexed chunks."""
-        if not self.chunks:
-            return
-
-        texts = [f"{c.title} {c.chapter} {c.text}" for c in self.chunks]
-        try:
-            from sklearn.feature_extraction.text import TfidfVectorizer
-            self.vectorizer = TfidfVectorizer(ngram_range=(1, 2), max_features=10000, stop_words="english")
-            self.vectors = self.vectorizer.fit_transform(texts)
-        except ImportError:
-            logger.error("scikit-learn is required for LocalVectorStore. Please install scikit-learn.")
-            self.vectors = None
+    def load_cached_index(self, current_fingerprint: str) -> bool:
+        """Loads index if cache matching fingerprint exists."""
+        cache_path = os.path.join(self.cache_dir, f"kb_index_{current_fingerprint}.pkl")
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "rb") as f:
+                    data = pickle.load(f)
+                    if data.get("fingerprint") == current_fingerprint:
+                        self.fingerprint = current_fingerprint
+                        self.chunks = [DocumentChunk(**c) for c in data["chunks"]]
+                        self.embeddings = data["embeddings"]
+                        self.bow_vectorizer = data.get("bow_vectorizer")
+                        logger.info(f"Loaded cached index ({len(self.chunks)} chunks) for {current_fingerprint}")
+                        return True
+            except Exception as e:
+                logger.warning(f"Failed to load cached index: {e}")
+        return False
 
     def retrieve_relevant_chunks(
         self,
@@ -118,68 +158,115 @@ class LocalVectorStore:
         subject: str = "Biology",
         exam: str = "MDCAT",
         top_k: int = 6,
+        min_similarity: float = 0.05,
     ) -> list[DocumentChunk]:
         """
-        Retrieves top_k chunks using cosine similarity, applying source diversity
-        to balance Punjab, Federal, Syllabus, and Past Paper sources.
+        Retrieves top relevant chunks with source diversity (ensuring Punjab,
+        Federal, Syllabus, and Past Paper representations if available).
         """
-        if not self.chunks or self.vectors is None or self.vectorizer is None:
+        if not self.chunks or self.embeddings is None:
             return []
 
-        try:
-            from sklearn.metrics.pairwise import cosine_similarity
-            import numpy as np
+        model = get_embedding_model()
+        if model == "fallback_bow" or self.bow_vectorizer is not None:
+            if self.bow_vectorizer is None:
+                return []
+            q_emb = self.bow_vectorizer.transform([query])
+        else:
+            q_emb = model.encode([query], convert_to_numpy=True, normalize_embeddings=True).astype(np.float32)
 
-            q_vec = self.vectorizer.transform([query])
-            sims = cosine_similarity(q_vec, self.vectors)[0]
+        scores = np.dot(self.embeddings, q_emb.T).flatten()
 
-            scored_chunks = []
-            for idx, score in enumerate(sims):
-                chunk = self.chunks[idx]
+        scored_chunks = []
+        for idx, (chunk, score) in enumerate(zip(self.chunks, scores)):
+            if subject and chunk.subject.lower() != subject.lower():
+                continue
 
-                # Boost score if subject matches
-                boost = 1.0
-                if chunk.subject.lower() == subject.lower():
-                    boost += 0.25
-                if any(e.lower() in exam.lower() for e in chunk.exam):
-                    boost += 0.15
+            if exam != "MDCAT + NUMS" and chunk.exam:
+                exam_names = [e.upper() for e in chunk.exam]
+                if exam.upper() not in exam_names and "MDCAT" in exam_names and exam.upper() == "NUMS":
+                    pass
 
-                scored_chunks.append((chunk, float(score * boost)))
+            if score >= min_similarity:
+                scored_chunks.append((chunk, float(score)))
 
-            # Sort by boosted similarity
+        scored_chunks.sort(key=lambda x: x[1], reverse=True)
+
+        if not scored_chunks:
+            scored_chunks = [(c, float(s)) for c, s in zip(self.chunks, scores)]
             scored_chunks.sort(key=lambda x: x[1], reverse=True)
 
-            # Apply source diversity: prioritize including at least one of each key source type
-            selected = []
-            seen_types = set()
+        selected_chunks: list[DocumentChunk] = []
+        seen_ids = set()
+        source_types_target = ["Syllabus", "Punjab Book", "Federal Book", "Past Paper"]
 
+        for stype in source_types_target:
             for chunk, score in scored_chunks:
-                if len(selected) >= top_k:
+                if chunk.source_type == stype and chunk.id not in seen_ids:
+                    selected_chunks.append(chunk)
+                    seen_ids.add(chunk.id)
                     break
-                # Prefer diverse source types in initial picks
-                if chunk.source_type not in seen_types and len(selected) < 4:
-                    selected.append(chunk)
-                    seen_types.add(chunk.source_type)
-                elif chunk not in selected:
-                    selected.append(chunk)
 
-            # Fill up to top_k if not reached
-            if len(selected) < top_k:
-                for chunk, _ in scored_chunks:
-                    if chunk not in selected:
-                        selected.append(chunk)
-                    if len(selected) >= top_k:
-                        break
+        for chunk, score in scored_chunks:
+            if chunk.id not in seen_ids and len(selected_chunks) < top_k:
+                selected_chunks.append(chunk)
+                seen_ids.add(chunk.id)
 
-            return selected
+        return selected_chunks[:top_k]
 
-        except Exception as e:
-            logger.error(f"Retrieval error: {e}")
-            return self.chunks[:top_k]
+    def search(
+        self,
+        query: str,
+        subject: str = "Biology",
+        exam: str = "MDCAT",
+        top_k: int = 6,
+        min_similarity: float = 0.05,
+    ) -> list[DocumentChunk]:
+        """Convenience alias for retrieve_relevant_chunks."""
+        return self.retrieve_relevant_chunks(
+            query=query,
+            subject=subject,
+            exam=exam,
+            top_k=top_k,
+            min_similarity=min_similarity,
+        )
+
+
+def build_compact_context(chunks: list[DocumentChunk]) -> str:
+    """Formats retrieved chunks into clean, budgeted prompt context with metadata."""
+    if not chunks:
+        return "No relevant sources found in knowledge base."
+
+    context_lines = []
+    for c in chunks:
+        page_str = c.page if c.page and c.page != "unknown" else "Page information unavailable"
+        header = f"[SOURCE ID: {c.id}] Type: {c.source_type} | Title: {c.title} | Page: {page_str}"
+        if c.year and c.year != "N/A":
+            header += f" | Historical Year: {c.year}"
+        context_lines.append(header)
+        context_lines.append(f'"""\n{c.text}\n"""\n')
+
+    return "\n".join(context_lines)
+
+
+def clean_json_response(raw_response: str) -> str:
+    """Strips markdown code blocks, backticks, and trailing characters from LLM response."""
+    text = raw_response.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9_-]*\n", "", text)
+        text = re.sub(r"\n```$", "", text)
+        text = text.strip()
+
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        text = text[first_brace : last_brace + 1]
+
+    return text
 
 
 class GroqClient:
-    """Handles communications with Groq API, error recovery, JSON repair, and dynamic fallback mode."""
+    """Handles communications with Groq API, error recovery, JSON repair, and verified demo mode."""
 
     def __init__(self, api_key: Optional[str] = None, model: str = "llama-3.3-70b-versatile"):
         self.api_key = api_key or os.environ.get("GROQ_API_KEY", "")
@@ -206,9 +293,9 @@ class GroqClient:
         exam: str,
         retrieved_chunks: list[DocumentChunk],
     ) -> dict[str, Any]:
-        """Calls Groq to generate structured Concept Intelligence, or loads dynamic fallback if unconfigured."""
+        """Calls Groq to generate structured Concept Intelligence, or loads verified seed demo if unconfigured."""
         if not self.is_configured():
-            logger.info("Groq API key not configured. Using dynamic grounded textbook intelligence.")
+            logger.info("Groq API key not configured. Using verified grounded demo intelligence.")
             return self._generate_verified_demo_analysis(query, subject, exam, retrieved_chunks)
 
         client = self.get_client()
@@ -238,7 +325,7 @@ class GroqClient:
             parsed = self._safe_parse_json(raw_content, client=client)
             return self._validate_and_sanitize_analysis(parsed, retrieved_chunks)
         except Exception as e:
-            logger.error(f"Groq API call failed: {e}. Falling back to dynamic textbook mode.")
+            logger.error(f"Groq API call failed: {e}. Falling back to verified grounded demo mode.")
             return self._generate_verified_demo_analysis(query, subject, exam, retrieved_chunks)
 
     def _safe_parse_json(self, raw_str: str, client=None) -> dict[str, Any]:
@@ -301,8 +388,6 @@ class GroqClient:
     ) -> dict[str, Any]:
         """
         High-fidelity grounded intelligence for demonstration/fallback mode.
-        Dynamically extracts and synthesizes from retrieved chunks when Groq API key is unconfigured,
-        or serves the verified enzyme seed dataset if query specifically targets enzymes.
         """
         valid_ids = [c.id for c in retrieved_chunks] if retrieved_chunks else [
             "Punjab_Biology_Enzymes_Ch11_p3_c0",
@@ -318,7 +403,6 @@ class GroqClient:
             or any(k in q_lower for k in ["enzyme", "inhibit", "vmax", "km", "active site", "apoenzyme", "cofactor", "lock and key", "induced fit"])
         )
 
-        # 1. If enzyme query, return the handcrafted verified seed dataset
         if is_enzyme_topic and (not retrieved_chunks or any("Enzyme" in c.id or "pastpaper" in c.id for c in retrieved_chunks)):
             return {
                 "concept_title": "Competitive Enzyme Inhibition and Kinetics",
@@ -401,7 +485,6 @@ class GroqClient:
                 "source_ids": valid_ids
             }
 
-        # 2. Dynamic Extractive Intelligence from actual retrieved chunks
         title = q_clean.rstrip("?").rstrip(".").title()
         if len(title) > 60:
             words = title.split()
@@ -409,7 +492,6 @@ class GroqClient:
         if not title:
             title = f"{subject} High-Yield Concept"
 
-        # Extract sentences and source breakdowns from retrieved chunks
         extracted_sentences: list[str] = []
         punjab_texts: list[str] = []
         federal_texts: list[str] = []
@@ -436,7 +518,6 @@ class GroqClient:
                     "verified": True
                 })
 
-        # Build Core Explanation
         if extracted_sentences:
             core_explanation = " ".join(extracted_sentences[:3])
         else:
@@ -445,7 +526,6 @@ class GroqClient:
                 f"It encompasses core theoretical mechanisms, experimental observations, and high-frequency examination applications."
             )
 
-        # Build Deep Explanation
         deep_explanation = []
         for i, s in enumerate(extracted_sentences[1:5]):
             deep_explanation.append(f"[VERIFIED] Principle {i+1}: {s}")
@@ -459,7 +539,6 @@ class GroqClient:
             f"[INFERENCE] High-Yield Exam Trap: In {exam} questions regarding {title}, differentiate carefully between underlying definitions, boundary conditions, and direct experimental evidence."
         )
 
-        # Textbook syntheses
         punjab_synth = (
             f"[VERIFIED] {' '.join(punjab_texts[:2])}"
             if punjab_texts
@@ -485,7 +564,6 @@ class GroqClient:
                 }
             ]
 
-        # Quick recall
         quick_recall = []
         for s in extracted_sentences[:4]:
             if len(s) < 100:
@@ -495,7 +573,6 @@ class GroqClient:
         while len(quick_recall) < 4:
             quick_recall.append(f"Master key definitions and terminology associated with {title}.")
 
-        # Diagram
         nodes = [
             f"1. {title} Fundamentals",
             "2. Core Mechanism",
