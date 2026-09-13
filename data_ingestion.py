@@ -40,6 +40,7 @@ def clean_text(raw_text: str) -> str:
     """Normalize whitespace and remove non-printable characters."""
     if not raw_text:
         return ""
+    # Replace multiple spaces/newlines with clean spacing
     cleaned = re.sub(r"\r\n|\r", "\n", raw_text)
     cleaned = re.sub(r"[ \t]+", " ", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
@@ -71,6 +72,7 @@ def extract_pdf_pages(file_path: str) -> list[dict[str, Any]]:
                 )
     except Exception as e:
         logger.error(f"Error reading PDF {file_path}: {e}")
+        # Fallback with unknown page if catastrophic failure
         pages.append(
             {
                 "page": "unknown",
@@ -102,7 +104,9 @@ def chunk_text(
     while start < text_len:
         end = min(start + chunk_size, text_len)
 
+        # If not at the end of the text, try to find a natural boundary
         if end < text_len:
+            # Look for double newline first, then single newline, then period
             boundary = text.rfind("\n\n", start + overlap, end)
             if boundary == -1:
                 boundary = text.rfind("\n", start + overlap, end)
@@ -115,6 +119,7 @@ def chunk_text(
         if chunk:
             chunks.append(chunk)
 
+        # Advance start position by chunk_size - overlap
         if end >= text_len:
             break
         start = max(end - overlap, start + 1)
@@ -128,6 +133,7 @@ def compute_kb_fingerprint(sources_dir: str, manifest_path: str = "") -> str:
     in sources_dir and the manifest to avoid rebuilding index unnecessarily.
     """
     hasher = hashlib.sha256()
+
     file_entries = []
     if os.path.exists(sources_dir):
         for root, _, files in os.walk(sources_dir):
@@ -192,15 +198,42 @@ def build_knowledge_base_chunks(
     chunks: list[DocumentChunk] = []
     manifest_map = load_manifest(manifest_path)
 
-    # 1. Process PDF Files
+    # 1. Process PDF Files (recursive discovery to support nested folders from Google Drive)
     if os.path.exists(sources_dir):
-        pdf_files = [f for f in os.listdir(sources_dir) if f.lower().endswith(".pdf")]
-        for pdf_file in sorted(pdf_files):
-            file_path = os.path.join(sources_dir, pdf_file)
+        discovered_pdfs = []
+        for root, _, files in os.walk(sources_dir):
+            for f in files:
+                if f.lower().endswith(".pdf"):
+                    discovered_pdfs.append((f, os.path.join(root, f)))
+
+        for pdf_file, file_path in sorted(discovered_pdfs, key=lambda x: x[0]):
             meta = manifest_map.get(pdf_file, {})
 
-            source_type = meta.get("source_type", "Study Source")
-            subject = meta.get("subject", "Biology")
+            # Auto-infer source_type if not defined in manifest
+            name_lower = pdf_file.lower() + " " + file_path.lower()
+            if "source_type" in meta:
+                source_type = meta["source_type"]
+            elif "punjab" in name_lower or "ptb" in name_lower:
+                source_type = "Punjab Book"
+            elif "federal" in name_lower or "nbf" in name_lower:
+                source_type = "Federal Book"
+            elif "syllabus" in name_lower or "pmdc" in name_lower:
+                source_type = "Syllabus"
+            elif "past" in name_lower or "202" in name_lower or "201" in name_lower:
+                source_type = "Past Paper"
+            else:
+                source_type = "Study Source"
+
+            # Auto-infer subject if not defined
+            if "subject" in meta:
+                subject = meta["subject"]
+            elif "chem" in name_lower:
+                subject = "Chemistry"
+            elif "phy" in name_lower:
+                subject = "Physics"
+            else:
+                subject = "Biology"
+
             exam = meta.get("exam", ["MDCAT", "NUMS"])
             chapter = meta.get("chapter", "")
             title = meta.get("edition", pdf_file.replace(".pdf", "").replace("_", " "))
@@ -212,6 +245,7 @@ def build_knowledge_base_chunks(
 
                 raw_chunks = chunk_text(page_text, chunk_size=chunk_size, overlap=overlap)
                 for c_idx, c_text in enumerate(raw_chunks):
+                    # Deterministic Chunk ID
                     chunk_id = f"{pdf_file.replace('.pdf', '')}_p{page_str}_c{c_idx}"
                     chunk_obj = DocumentChunk(
                         id=chunk_id,
@@ -227,7 +261,7 @@ def build_knowledge_base_chunks(
                     )
                     chunks.append(chunk_obj)
 
-    # 2. Ingest Verified Past Papers
+    # 2. Ingest Verified Past Papers as authoritative concept evidence chunks
     if past_papers_path and os.path.exists(past_papers_path):
         past_papers = load_past_papers(past_papers_path)
         for idx, paper in enumerate(past_papers):
@@ -262,9 +296,9 @@ def build_knowledge_base_chunks(
                 page="unknown",
                 year=year_str,
             )
-            chunks.append(chunk_obj)
-
     # 3. Guaranteed Fallback Self-Healing
+    # If no chunks were loaded (e.g. fresh clone, unextracted zip, or missing PDFs),
+    # immediately return verified in-memory seed chunks so chunks is NEVER 0.
     if len(chunks) == 0:
         logger.info("Knowledge base directory empty or unreadable. Returning in-memory verified seed chunks.")
         return get_default_verified_seed_chunks()
@@ -414,16 +448,16 @@ def sync_google_drive_public_folders(
     folder_urls: list[str], target_dir: str
 ) -> list[str]:
     """
-    Downloads documents from public Google Drive folder links using gdown.
+    Downloads documents from public Google Drive folder links or direct file links using gdown.
     Caches downloaded files so they are not re-downloaded on every run.
-    Note: Private Google Drive requires OAuth / Service Account credentials.
+    Note: Link access in Google Drive must be set to 'Anyone with the link' (Viewer).
     """
     downloaded_files = []
     if not folder_urls:
         return downloaded_files
 
     try:
-        import gdown
+        import gdown  # Lazy import
     except ImportError:
         logger.warning("gdown library not installed. Cannot sync Google Drive folders.")
         return downloaded_files
@@ -436,11 +470,18 @@ def sync_google_drive_public_folders(
             continue
 
         try:
-            logger.info(f"Syncing Google Drive public folder: {url}")
-            res = gdown.download_folder(url, output=target_dir, quiet=True, use_cookies=False)
-            if res:
-                downloaded_files.extend(res)
+            logger.info(f"Syncing Google Drive source: {url}")
+            if "/folders/" in url:
+                # Folder download
+                res = gdown.download_folder(url, output=target_dir, quiet=False, use_cookies=False, remaining_ok=True)
+                if res:
+                    downloaded_files.extend(res)
+            else:
+                # Direct file or sharing link
+                res = gdown.download(url, output=os.path.join(target_dir, ""), quiet=False, fuzzy=True)
+                if res:
+                    downloaded_files.append(res)
         except Exception as e:
-            logger.error(f"Failed to sync Google Drive folder {url}: {e}")
+            logger.error(f"Failed to sync Google Drive link {url}: {e}")
 
     return downloaded_files
