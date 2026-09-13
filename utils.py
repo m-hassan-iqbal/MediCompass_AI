@@ -41,10 +41,26 @@ h1, h2, h3, h4, h5, h6, .hero-title {
     font-weight: 800 !important;
 }
 
-/* Hide Streamlit default hamburger & footer */
+/* Header & Navigation Bar - Semi-transparent dark blur so Streamlit Cloud controls remain visible */
 #MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
+footer {display: none;}
+header[data-testid="stHeader"] {
+    background-color: rgba(5, 7, 14, 0.8) !important;
+    backdrop-filter: blur(8px) !important;
+}
+
+/* Clear, High-Contrast Error, Warning & Alert banners */
+[data-testid="stAlert"], .stAlert, [data-testid="stException"] {
+    background-color: #1E1B4B !important;
+    border: 1.5px solid #818CF8 !important;
+    border-radius: 14px !important;
+    color: #FFFFFF !important;
+    padding: 16px !important;
+    margin: 12px 0 !important;
+}
+[data-testid="stAlert"] *, .stAlert *, [data-testid="stException"] * {
+    color: #FFFFFF !important;
+}
 
 /* Container padding */
 .block-container {
@@ -240,68 +256,108 @@ div.stButton > button[kind="primary"]:hover {
     background-color: #4F46E5 !important;
     box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4) !important;
 }
+div.stButton > button[kind="primary"] * {
+    color: #FFFFFF !important;
+}
 div.stButton > button[kind="secondary"] {
     background-color: #0F172A !important;
     color: #F8FAFC !important;
     border: 1.5px solid #334155 !important;
 }
 div.stButton > button[kind="secondary"]:hover {
+    background-color: #1E293B !important;
     border-color: #6366F1 !important;
-    color: #FFFFFF !important;
 }
-
-/* Radio buttons in Quizzes */
-div[data-testid="stRadio"] > div {
-    background: #080B11 !important;
-    padding: 12px 18px !important;
-    border-radius: 14px !important;
-    border: 1px solid #1E293B !important;
-    margin-top: 8px !important;
-}
-div[data-testid="stRadio"] label span {
+div.stButton > button[kind="secondary"] * {
     color: #F8FAFC !important;
-    font-size: 0.96rem !important;
 }
 
-/* Tabs styling */
+/* Quiz Option Radio Cards */
+div[data-testid="stRadio"] > div {
+    gap: 12px;
+}
+div[data-testid="stRadio"] label {
+    background-color: #0F172A !important;
+    border: 1.5px solid #1E293B !important;
+    border-radius: 14px !important;
+    padding: 14px 18px !important;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+}
+div[data-testid="stRadio"] label:hover {
+    border-color: #6366F1 !important;
+    background-color: #18182E !important;
+}
+div[data-testid="stRadio"] label * {
+    color: #F8FAFC !important;
+}
+
+/* Metric KPI Styling */
+.kpi-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: #0F172A;
+    border: 1.5px solid #1E293B;
+    border-radius: 16px;
+    padding: 18px 22px;
+}
+.kpi-val {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #FFFFFF;
+}
+.kpi-label {
+    font-size: 0.82rem;
+    color: #94A3B8;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Tabs Dark styling */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 8px !important;
-    border-bottom: 2px solid #1E293B !important;
+    gap: 8px;
+    background-color: #080B11;
+    padding: 6px;
+    border-radius: 12px;
+    border: 1px solid #1E293B;
 }
 .stTabs [data-baseweb="tab"] {
-    padding: 10px 20px !important;
-    border-radius: 8px 8px 0 0 !important;
-    font-weight: 700 !important;
+    border-radius: 8px;
     color: #94A3B8 !important;
+    font-weight: 700 !important;
+    padding: 8px 16px;
 }
 .stTabs [aria-selected="true"] {
-    color: #818CF8 !important;
-    border-bottom: 3px solid #6366F1 !important;
+    background-color: #1E293B !important;
+    color: #FFFFFF !important;
 }
 </style>
 """
 
 
 def apply_custom_styles():
-    """Injects high-contrast fintech CSS into the Streamlit application."""
+    """Injects custom CSS into the active Streamlit app."""
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
 def init_session_state():
-    """Ensures all state variables exist with safe defaults."""
-    defaults: dict[str, Any] = {
+    """Initializes persistent application session state defaults."""
+    defaults = {
         "page": "analyze",
         "subject": "Biology",
         "exam": "MDCAT",
         "query": "",
-        "retrieved_chunks": [],
         "analysis": None,
-        "quiz_questions": [],
-        "quiz_answers": {},
+        "quiz": None,
         "quiz_submitted": False,
-        "quiz_result": None,
+        "user_answers": {},
+        "quiz_score": 0,
         "quiz_start_time": None,
-        "student_accuracy": None,
+        "quiz_time_taken": 0,
+        "viewed_sources": [],
+        "groq_api_key": "",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -309,162 +365,129 @@ def init_session_state():
 
 
 def navigate_to(page_name: str):
-    """Sets the active navigation page and triggers rerun."""
+    """Updates the active navigation page in session state."""
     st.session_state.page = page_name
     st.rerun()
 
 
-def render_fintech_priority_ring(score: int, label: str) -> str:
-    """Generates an SVG circular progress ring styled for solid black."""
-    score = max(0, min(100, score))
-    radius = 54
-    circumference = 2 * 3.1415926535 * radius
-    stroke_dashoffset = circumference - (score / 100.0) * circumference
-
-    if score >= 75:
-        color = "#818CF8"   # High priority indigo
-        bg_soft = "rgba(99, 102, 241, 0.15)"
-    elif score >= 50:
-        color = "#38BDF8"   # Medium priority sky blue
-        bg_soft = "rgba(56, 189, 248, 0.15)"
-    else:
-        color = "#94A3B8"   # Slate
-        bg_soft = "rgba(148, 163, 184, 0.15)"
+def render_fintech_priority_ring(priority_level: str, size: int = 120) -> str:
+    """
+    Renders an SVG ring indicator for exam priority (High/Medium/Low).
+    """
+    levels = {
+        "high": {"percent": 92, "color": "#EF4444", "label": "HIGH", "bg": "#450A0A"},
+        "medium": {"percent": 65, "color": "#F59E0B", "label": "MED", "bg": "#451A03"},
+        "low": {"percent": 35, "color": "#10B981", "label": "LOW", "bg": "#022C22"},
+    }
+    cfg = levels.get(priority_level.lower(), levels["high"])
+    stroke_dashoffset = 283 - (283 * cfg["percent"] / 100)
 
     return f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 0;">
-        <div style="position: relative; width: 136px; height: 136px; display: flex; align-items: center; justify-content: center;">
-            <svg width="136" height="136" viewBox="0 0 136 136" style="transform: rotate(-90deg);">
-                <circle cx="68" cy="68" r="{radius}" fill="none" stroke="#1E293B" stroke-width="10" />
-                <circle cx="68" cy="68" r="{radius}" fill="none" stroke="{color}" stroke-width="10"
-                    stroke-dasharray="{circumference:.2f}"
-                    stroke-dashoffset="{stroke_dashoffset:.2f}"
-                    stroke-linecap="round"
-                    style="transition: stroke-dashoffset 0.8s ease;" />
-            </svg>
-            <div style="position: absolute; text-align: center; display: flex; flex-direction: column; align-items: center;">
-                <span style="font-size: 1.85rem; font-weight: 800; color: #FFFFFF; line-height: 1;">{score}</span>
-                <span style="font-size: 0.68rem; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px;">PRIORITY</span>
-            </div>
-        </div>
-        <div style="margin-top: 10px; background: {bg_soft}; color: {color}; font-weight: 800; font-size: 0.78rem; padding: 4px 14px; border-radius: 9999px; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid {color}40;">
-            {label}
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <svg width="{size}" height="{size}" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="45" fill="none" stroke="#1E293B" stroke-width="8"/>
+            <circle cx="50" cy="50" r="45" fill="none" stroke="{cfg['color']}" stroke-width="8"
+                    stroke-dasharray="283" stroke-dashoffset="{stroke_dashoffset}"
+                    stroke-linecap="round" transform="rotate(-90 50 50)"/>
+            <text x="50" y="54" text-anchor="middle" font-family="'Plus Jakarta Sans', sans-serif"
+                  font-size="16" font-weight="800" fill="#FFFFFF">{cfg['label']}</text>
+        </svg>
+        <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.05em;">
+            EXAM YIELD
         </div>
     </div>
     """
 
 
-def render_fintech_score_ring(score: int, total: int = 10) -> str:
-    """Generates an SVG circular progress ring for the 10-MCQ score."""
-    percentage = int((score / total) * 100) if total > 0 else 0
-    radius = 54
-    circumference = 2 * 3.1415926535 * radius
-    stroke_dashoffset = circumference - (percentage / 100.0) * circumference
-
-    if percentage >= 80:
-        color = "#4ADE80"   # High accuracy green
-    elif percentage >= 50:
-        color = "#38BDF8"   # Medium sky blue
-    else:
-        color = "#F87171"   # Low red
+def render_fintech_score_ring(score: int, total: int = 10, size: int = 130) -> str:
+    """
+    Renders an SVG score progress ring for the quiz results screen.
+    """
+    pct = int((score / total) * 100) if total > 0 else 0
+    stroke_dashoffset = 283 - (283 * pct / 100)
+    color = "#10B981" if pct >= 70 else ("#F59E0B" if pct >= 50 else "#EF4444")
 
     return f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 0;">
-        <div style="position: relative; width: 136px; height: 136px; display: flex; align-items: center; justify-content: center;">
-            <svg width="136" height="136" viewBox="0 0 136 136" style="transform: rotate(-90deg);">
-                <circle cx="68" cy="68" r="{radius}" fill="none" stroke="#1E293B" stroke-width="10" />
-                <circle cx="68" cy="68" r="{radius}" fill="none" stroke="{color}" stroke-width="10"
-                    stroke-dasharray="{circumference:.2f}"
-                    stroke-dashoffset="{stroke_dashoffset:.2f}"
-                    stroke-linecap="round"
-                    style="transition: stroke-dashoffset 0.8s ease;" />
-            </svg>
-            <div style="position: absolute; text-align: center; display: flex; flex-direction: column; align-items: center;">
-                <span style="font-size: 1.85rem; font-weight: 800; color: #FFFFFF; line-height: 1;">{score}<span style="font-size: 1.1rem; color: #94A3B8;">/{total}</span></span>
-                <span style="font-size: 0.68rem; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px;">SCORE</span>
-            </div>
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <svg width="{size}" height="{size}" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="45" fill="none" stroke="#1E293B" stroke-width="8"/>
+            <circle cx="50" cy="50" r="45" fill="none" stroke="{color}" stroke-width="8"
+                    stroke-dasharray="283" stroke-dashoffset="{stroke_dashoffset}"
+                    stroke-linecap="round" transform="rotate(-90 50 50)"/>
+            <text x="50" y="48" text-anchor="middle" font-family="'Plus Jakarta Sans', sans-serif"
+                  font-size="20" font-weight="800" fill="#FFFFFF">{score}/{total}</text>
+            <text x="50" y="65" text-anchor="middle" font-family="'Plus Jakarta Sans', sans-serif"
+                  font-size="10" font-weight="700" fill="#94A3B8">{pct}%</text>
+        </svg>
+        <div style="font-size: 0.75rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; margin-top: 6px; letter-spacing: 0.05em;">
+            ACCURACY SCORE
         </div>
     </div>
     """
 
 
-def render_concept_diagram_html(diagram_data: dict[str, Any]) -> str:
-    """Renders an interactive concept flowchart with pure black and dark carbon boxes."""
-    if not diagram_data or not isinstance(diagram_data, dict):
-        return "<div class='fintech-card'>No diagram available.</div>"
-
-    title = diagram_data.get("title", "Concept Flowchart")
-    steps = diagram_data.get("steps", [])
+def render_concept_diagram_html(diagram_spec: dict[str, Any]) -> str:
+    """
+    Renders an HTML/SVG flowchart card for Concept Diagrams.
+    """
+    steps = diagram_spec.get("steps", [])
+    if not steps:
+        steps = [
+            {"title": "Initial State", "desc": "Substrate approaches active site"},
+            {"title": "Inhibitor Action", "desc": "Inhibitor binds or alters conformation"},
+            {"title": "Kinetic Outcome", "desc": "Km or Vmax changes accordingly"},
+        ]
 
     steps_html = ""
     for idx, step in enumerate(steps):
-        step_title = step.get("step_title", f"Stage {idx + 1}")
-        desc = step.get("description", "")
-        callout = step.get("exam_callout", "")
-
-        callout_badge = ""
-        if callout:
-            callout_badge = f"""
-            <div style="margin-top: 8px; font-size: 0.76rem; font-weight: 700; color: #A5B4FC; background: rgba(99, 102, 241, 0.2); padding: 4px 10px; border-radius: 6px; display: inline-block; border: 1px solid rgba(99, 102, 241, 0.4);">
-                ★ {callout}
-            </div>
-            """
-
-        arrow_html = ""
-        if idx < len(steps) - 1:
-            arrow_html = """
-            <div style="display: flex; justify-content: center; align-items: center; margin: 6px 0; color: #818CF8; font-size: 1.3rem; font-weight: 800;">
-                ↓
-            </div>
-            """
-
+        is_last = (idx == len(steps) - 1)
         steps_html += f"""
-        <div style="background: #080B11; border: 1.5px solid #1E293B; border-radius: 14px; padding: 16px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.5);">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                <span style="background: #6366F1; color: #FFFFFF; font-weight: 800; font-size: 0.75rem; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+        <div style="flex: 1; min-width: 170px; background-color: #1E293B; border: 1.5px solid #334155; border-radius: 14px; padding: 16px; position: relative;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <span style="background-color: #6366F1; color: #FFFFFF; font-size: 0.72rem; font-weight: 800; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
                     {idx + 1}
                 </span>
-                <span style="font-weight: 800; font-size: 1.02rem; color: #FFFFFF;">
-                    {step_title}
+                <span style="font-size: 0.88rem; font-weight: 800; color: #FFFFFF;">
+                    {step.get('title', 'Step')}
                 </span>
             </div>
-            <div style="font-size: 0.92rem; color: #CBD5E1; line-height: 1.5; margin-left: 34px;">
-                {desc}
-                {callout_badge}
+            <div style="font-size: 0.8rem; color: #94A3B8; line-height: 1.4;">
+                {step.get('desc', '')}
             </div>
         </div>
-        {arrow_html}
         """
+        if not is_last:
+            steps_html += """
+            <div style="display: flex; align-items: center; justify-content: center; padding: 0 6px; color: #6366F1; font-size: 1.3rem; font-weight: 800;">
+                →
+            </div>
+            """
 
     return f"""
-    <div class="fintech-card">
+    <div style="background-color: #0F172A; border: 1.5px solid #1E293B; border-radius: 20px; padding: 22px; margin: 16px 0;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <h3 style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; margin: 0;">{title}</h3>
-            <span class="badge-verified">VISUAL LOGIC FLOW</span>
+            <div style="font-size: 0.82rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
+                {diagram_spec.get('type', 'CONCEPT FLOWCHART').upper()}
+            </div>
+            <div style="font-size: 0.78rem; color: #94A3B8; font-weight: 600;">
+                {diagram_spec.get('title', 'Mental Model')}
+            </div>
         </div>
-        <div style="display: flex; flex-direction: column;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
             {steps_html}
         </div>
     </div>
     """
 
 
-def get_quiz_timer_state(total_seconds: int = 600) -> tuple[int, str, bool]:
-    """Manages the 10-minute countdown timer state."""
+def get_quiz_timer_state() -> int:
+    """Tracks elapsed time during quiz session."""
     if st.session_state.quiz_start_time is None:
         st.session_state.quiz_start_time = time.time()
-
-    elapsed = int(time.time() - st.session_state.quiz_start_time)
-    remaining = max(0, total_seconds - elapsed)
-
-    mins = remaining // 60
-    secs = remaining % 60
-    timer_str = f"{mins:02d}:{secs:02d}"
-    is_expired = (remaining == 0)
-
-    return remaining, timer_str, is_expired
+        return 0
+    return int(time.time() - st.session_state.quiz_start_time)
 
 
 def reset_quiz_timer():
-    """Resets the quiz timer clock."""
+    """Resets quiz timer on new quiz start."""
     st.session_state.quiz_start_time = time.time()
