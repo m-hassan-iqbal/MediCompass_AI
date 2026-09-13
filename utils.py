@@ -8,6 +8,19 @@ import time
 from typing import Any
 import streamlit as st
 
+
+def clean_html(html_str: str) -> str:
+    """
+    Strips leading and trailing whitespace from every line of an HTML string.
+    Crucial for Streamlit: prevents Python-Markdown from misinterpreting indented lines
+    (4+ spaces) as markdown code blocks (<pre><code>).
+    """
+    if not html_str:
+        return ""
+    lines = [line.strip() for line in str(html_str).strip().splitlines() if line.strip()]
+    return "\n".join(lines)
+
+
 CUSTOM_CSS = """
 <style>
 /* Modern Fintech Intelligence Theme - Solid Black / Dark OLED */
@@ -41,7 +54,7 @@ h1, h2, h3, h4, h5, h6, .hero-title {
     font-weight: 800 !important;
 }
 
-/* Header & Navigation Bar - Semi-transparent dark blur */
+/* Header & Navigation Bar - Semi-transparent dark blur so Streamlit Cloud controls remain visible */
 #MainMenu {visibility: hidden;}
 footer {display: none;}
 header[data-testid="stHeader"] {
@@ -49,7 +62,7 @@ header[data-testid="stHeader"] {
     backdrop-filter: blur(8px) !important;
 }
 
-/* High-Contrast Error, Warning & Alert banners */
+/* Clear, High-Contrast Error, Warning & Alert banners */
 [data-testid="stAlert"], .stAlert, [data-testid="stException"] {
     background-color: #1E1B4B !important;
     border: 1.5px solid #818CF8 !important;
@@ -343,6 +356,7 @@ def render_fintech_priority_ring(*args, **kwargs) -> str:
             score = int(val2)
             label = str(val1 or "STUDY NOW")
         else:
+            # Both are strings or unknown; try parsing integer
             try:
                 score = int(val1)
                 label = str(val2 or "STUDY NOW")
@@ -373,29 +387,27 @@ def render_fintech_priority_ring(*args, **kwargs) -> str:
         color = "#10B981"
         bg_ring = "#0F3323"
 
-    return f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">
-        <div style="position: relative; width: 140px; height: 140px;">
-            <svg width="140" height="140" viewBox="0 0 140 140" style="transform: rotate(-90deg);">
-                <circle cx="70" cy="70" r="{radius}" fill="none" stroke="{bg_ring}" stroke-width="12" />
-                <circle cx="70" cy="70" r="{radius}" fill="none" stroke="{color}" stroke-width="12"
-                    stroke-dasharray="{circumference}" stroke-dashoffset="{stroke_offset}" stroke-linecap="round" />
-            </svg>
-            <div style="position: absolute; top: 0; left: 0; width: 140px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                <span style="font-size: 2rem; font-weight: 800; color: #FFFFFF; line-height: 1;">{score}</span>
-                <span style="font-size: 0.75rem; font-weight: 700; color: #94A3B8; margin-top: 2px;">/ 100</span>
-            </div>
-        </div>
-        <div style="margin-top: 12px; text-align: center;">
-            <span style="background-color: {bg_ring}; color: {color}; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 0.8rem; letter-spacing: 0.05em; border: 1px solid {color}66;">
-                {label_clean}
-            </span>
-            <div style="font-size: 0.75rem; color: #94A3B8; font-weight: 600; margin-top: 6px;">
-                Evidence Study Priority
-            </div>
-        </div>
-    </div>
-    """
+    html_card = (
+        f'<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">'
+        f'<div style="position: relative; width: 140px; height: 140px;">'
+        f'<svg width="140" height="140" viewBox="0 0 140 140" style="transform: rotate(-90deg);">'
+        f'<circle cx="70" cy="70" r="{radius}" fill="none" stroke="{bg_ring}" stroke-width="12" />'
+        f'<circle cx="70" cy="70" r="{radius}" fill="none" stroke="{color}" stroke-width="12" stroke-dasharray="{circumference}" stroke-dashoffset="{stroke_offset}" stroke-linecap="round" />'
+        f'</svg>'
+        f'<div style="position: absolute; top: 0; left: 0; width: 140px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center;">'
+        f'<span style="font-size: 2rem; font-weight: 800; color: #FFFFFF; line-height: 1;">{score}</span>'
+        f'<span style="font-size: 0.75rem; font-weight: 700; color: #94A3B8; margin-top: 2px;">/ 100</span>'
+        f'</div>'
+        f'</div>'
+        f'<div style="margin-top: 12px; text-align: center;">'
+        f'<span style="background-color: {bg_ring}; color: {color}; padding: 6px 14px; border-radius: 9999px; font-weight: 800; font-size: 0.8rem; letter-spacing: 0.05em; border: 1px solid {color}66;">'
+        f'{label_clean}'
+        f'</span>'
+        f'<div style="font-size: 0.75rem; color: #94A3B8; font-weight: 600; margin-top: 6px;">Evidence Study Priority</div>'
+        f'</div>'
+        f'</div>'
+    )
+    return clean_html(html_card)
 
 
 def render_fintech_score_ring(*args, **kwargs) -> str:
@@ -406,6 +418,7 @@ def render_fintech_score_ring(*args, **kwargs) -> str:
     total = 10
     label = "Concept Score"
 
+    # Kwargs
     if "score" in kwargs:
         try:
             score = int(kwargs["score"])
@@ -419,6 +432,7 @@ def render_fintech_score_ring(*args, **kwargs) -> str:
     if "label" in kwargs:
         label = str(kwargs["label"])
 
+    # Positional args
     if len(args) == 1:
         try:
             score = int(args[0])
@@ -456,34 +470,30 @@ def render_fintech_score_ring(*args, **kwargs) -> str:
         color = "#EF4444"
         bg_ring = "#3B1219"
 
-    return f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">
-        <div style="position: relative; width: 140px; height: 140px;">
-            <svg width="140" height="140" viewBox="0 0 140 140" style="transform: rotate(-90deg);">
-                <circle cx="70" cy="70" r="{radius}" fill="none" stroke="{bg_ring}" stroke-width="12" />
-                <circle cx="70" cy="70" r="{radius}" fill="none" stroke="{color}" stroke-width="12"
-                    stroke-dasharray="{circumference}" stroke-dashoffset="{stroke_offset}" stroke-linecap="round" />
-            </svg>
-            <div style="position: absolute; top: 0; left: 0; width: 140px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                <span style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; line-height: 1;">{score}</span>
-                <span style="font-size: 0.8rem; font-weight: 700; color: #94A3B8; margin-top: 2px;">/ {total}</span>
-            </div>
-        </div>
-        <div style="margin-top: 12px; text-align: center;">
-            <div style="font-size: 0.9rem; font-weight: 800; color: #FFFFFF;">
-                {label}
-            </div>
-            <div style="font-size: 0.75rem; color: #94A3B8; font-weight: 600;">
-                {round(pct * 100)}% Accuracy
-            </div>
-        </div>
-    </div>
-    """
+    html_score = (
+        f'<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">'
+        f'<div style="position: relative; width: 140px; height: 140px;">'
+        f'<svg width="140" height="140" viewBox="0 0 140 140" style="transform: rotate(-90deg);">'
+        f'<circle cx="70" cy="70" r="{radius}" fill="none" stroke="{bg_ring}" stroke-width="12" />'
+        f'<circle cx="70" cy="70" r="{radius}" fill="none" stroke="{color}" stroke-width="12" stroke-dasharray="{circumference}" stroke-dashoffset="{stroke_offset}" stroke-linecap="round" />'
+        f'</svg>'
+        f'<div style="position: absolute; top: 0; left: 0; width: 140px; height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center;">'
+        f'<span style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; line-height: 1;">{score}</span>'
+        f'<span style="font-size: 0.8rem; font-weight: 700; color: #94A3B8; margin-top: 2px;">/ {total}</span>'
+        f'</div>'
+        f'</div>'
+        f'<div style="margin-top: 12px; text-align: center;">'
+        f'<div style="font-size: 0.9rem; font-weight: 800; color: #FFFFFF;">{label}</div>'
+        f'<div style="font-size: 0.75rem; color: #94A3B8; font-weight: 600;">{round(pct * 100)}% Accuracy</div>'
+        f'</div>'
+        f'</div>'
+    )
+    return clean_html(html_score)
 
 
 def render_concept_diagram_html(*args, **kwargs) -> str:
     """
-    Renders visual concept flowchart HTML.
+    Renders visual concept flowchart HTML without markdown indentation bugs.
     Supports:
     - Single dict: render_concept_diagram_html(diagram_data)
     - Keyword arguments: render_concept_diagram_html(title=..., nodes=..., connections=..., memory_hook=...)
@@ -500,6 +510,7 @@ def render_concept_diagram_html(*args, **kwargs) -> str:
             if len(args) > 2 and isinstance(args[2], list):
                 diagram_data["connections"] = args[2]
 
+    # Overlay any keyword arguments (allows overriding or direct kwargs)
     for k, v in kwargs.items():
         diagram_data[k] = v
 
@@ -511,12 +522,12 @@ def render_concept_diagram_html(*args, **kwargs) -> str:
     cards_html = []
     for i, node in enumerate(nodes):
         node_step = f"0{i+1}" if i < 9 else str(i+1)
-        card_content = f"""
-        <div style="flex: 1; min-width: 170px; max-width: 220px; background: #131B2E; border: 1.5px solid #334155; border-radius: 16px; padding: 16px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); margin: 8px; text-align: center;">
-            <div style="font-size: 0.7rem; font-weight: 800; color: #818CF8; letter-spacing: 0.1em; text-transform: uppercase;">STEP {node_step}</div>
-            <div style="font-size: 0.95rem; font-weight: 700; color: #FFFFFF; margin-top: 6px; line-height: 1.4;">{node}</div>
-        </div>
-        """
+        card_content = (
+            f'<div style="flex: 1; min-width: 170px; max-width: 220px; background: #131B2E; border: 1.5px solid #334155; border-radius: 16px; padding: 16px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); margin: 8px; text-align: center;">'
+            f'<div style="font-size: 0.7rem; font-weight: 800; color: #818CF8; letter-spacing: 0.1em; text-transform: uppercase;">STEP {node_step}</div>'
+            f'<div style="font-size: 0.95rem; font-weight: 700; color: #FFFFFF; margin-top: 6px; line-height: 1.4;">{node}</div>'
+            f'</div>'
+        )
         cards_html.append(card_content)
 
         if i < len(nodes) - 1:
@@ -524,46 +535,46 @@ def render_concept_diagram_html(*args, **kwargs) -> str:
             if i < len(connections):
                 edge_label = connections[i][2] if len(connections[i]) > 2 else ""
 
-            arrow = f"""
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 4px 0;">
-                <span style="font-size: 0.65rem; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; background: #1E293B; padding: 2px 6px; border-radius: 4px; margin-bottom: 2px;">{edge_label}</span>
-                <span style="color: #818CF8; font-size: 1.4rem; font-weight: 800;">→</span>
-            </div>
-            """
+            label_badge = f'<span style="font-size: 0.65rem; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; background: #1E293B; padding: 2px 6px; border-radius: 4px; margin-bottom: 2px;">{edge_label}</span>' if edge_label else ""
+            arrow = (
+                f'<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 4px 0;">'
+                f'{label_badge}'
+                f'<span style="color: #818CF8; font-size: 1.4rem; font-weight: 800;">→</span>'
+                f'</div>'
+            )
             cards_html.append(arrow)
 
     flow_content = "".join(cards_html)
     memory_rule_html = ""
     if hook:
-        memory_rule_html = f"""
-        <div style="margin-top: 24px; background: #18182E; border-radius: 12px; padding: 14px 20px; border-left: 4px solid #6366F1; display: flex; align-items: center; justify-content: space-between;">
-            <div>
-                <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; text-transform: uppercase; letter-spacing: 0.05em;">CORE MEMORY RULE</span>
-                <div style="font-size: 0.95rem; font-weight: 700; color: #E0E7FF; margin-top: 2px;">{hook}</div>
-            </div>
-            <span style="font-size: 1.5rem;">🧠</span>
-        </div>
-        """
+        memory_rule_html = (
+            f'<div style="margin-top: 24px; background: #18182E; border-radius: 12px; padding: 14px 20px; border-left: 4px solid #6366F1; display: flex; align-items: center; justify-content: space-between;">'
+            f'<div>'
+            f'<span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; text-transform: uppercase; letter-spacing: 0.05em;">CORE MEMORY RULE</span>'
+            f'<div style="font-size: 0.95rem; font-weight: 700; color: #E0E7FF; margin-top: 2px;">{hook}</div>'
+            f'</div>'
+            f'<span style="font-size: 1.5rem;">🧠</span>'
+            f'</div>'
+        )
 
-    return f"""
-    <div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 20px; padding: 28px; box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.4); margin-bottom: 24px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1E293B; padding-bottom: 14px; margin-bottom: 20px;">
-            <div>
-                <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">VISUAL CONCEPT FLOW</span>
-                <h3 style="font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 0 0;">{title}</h3>
-            </div>
-            <span style="background-color: #1E1B4B; color: #C7D2FE; padding: 6px 14px; border-radius: 9999px; font-size: 0.8rem; font-weight: 700; border: 1px solid #4338CA;">
-                Infographic Architecture
-            </span>
-        </div>
-
-        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 10px 0;">
-            {flow_content}
-        </div>
-
-        {memory_rule_html}
-    </div>
-    """
+    full_diagram = (
+        f'<div style="background: #0F172A; border: 1.5px solid #1E293B; border-radius: 20px; padding: 28px; box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.4); margin-bottom: 24px;">'
+        f'<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1E293B; padding-bottom: 14px; margin-bottom: 20px;">'
+        f'<div>'
+        f'<span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">VISUAL CONCEPT FLOW</span>'
+        f'<h3 style="font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 0 0;">{title}</h3>'
+        f'</div>'
+        f'<span style="background-color: #1E1B4B; color: #C7D2FE; padding: 6px 14px; border-radius: 9999px; font-size: 0.8rem; font-weight: 700; border: 1px solid #4338CA;">'
+        f'Infographic Architecture'
+        f'</span>'
+        f'</div>'
+        f'<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 10px 0;">'
+        f'{flow_content}'
+        f'</div>'
+        f'{memory_rule_html}'
+        f'</div>'
+    )
+    return clean_html(full_diagram)
 
 
 def get_quiz_timer_state(*args, **kwargs) -> tuple[int, str, bool]:
