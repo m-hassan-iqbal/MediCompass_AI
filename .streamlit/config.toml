@@ -1,0 +1,16 @@
+[theme]
+base = "light"
+primaryColor = "#5368E9"
+backgroundColor = "#F7F9FD"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#172033"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+maxUploadSize = 50
+
+[browser]
+gatherUsageStats = false
