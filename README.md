@@ -36,3 +36,56 @@ The student's fundamental problem is **not a lack of information**. The student'
 ## 2. System Architecture
 
 MediCompass AI is architected with a strict **grounded-first** hierarchy:
+
+
+---
+
+## 3. Core Features
+
+### ◈ Concept Intelligence
+* **Core Concept Card**: Answers what it is, how it works, why it is relevant, what causes the correct result, and common student confusions.
+* **Deep Mechanistic Explanation**: Bullet points labeled with visual `[VERIFIED]` (source grounded) and `[INFERENCE]` (pedagogical guidance) tags.
+* **Why This Matters**: Syllabus relevance and historical exam grounding without speculative probability claims.
+* **Memory Hook**: Quick mnemonics and kinetic rules for rapid recall.
+* **Source Synthesis**: Direct comparison of Punjab Textbook vs. Federal Board coverage.
+* **Historical Past-Paper Intelligence**: Concept logs from verified past MDCAT/NUMS papers (📌 verified occurrences only).
+* **Evidence-Based Study Priority Ring**: Transparent 0–100 circular visual score:
+  $$\text{Priority} = \text{Syllabus Relevance (0-40)} + \text{Historical Evidence (0-35)} + \text{Personal Performance (0-25)}$$
+  * `75-100`: **STUDY NOW**
+  * `50-74`: **REVIEW SOON**
+  * `0-49`: **LOWER PRIORITY**
+
+### 🧠 Quick Memorize Diagram
+* Responsive, high-aesthetic educational flowchart (4–8 nodes).
+* Cause-and-effect connectors and key terms.
+* Rapid recall anchors for quick revision before exam day.
+
+### 🎯 10-MCQ Concept Check
+* Exactly **10 conceptual MCQs** (3 Direct Understanding, 4 Conceptual Reasoning, 3 Application / Interpretation).
+* Real **10-minute countdown timer** (`MM:SS`) with automatic submission at `00:00`.
+* Circular Concept Score Ring (`X / 10`).
+* In-depth answer breakdown:
+  * User choice vs. correct answer
+  * Deep scientific concept explanation
+  * Misconception analysis explaining why wrong options are tempting
+  * Memory hooks and verified historical paper references
+
+### 📖 Exact Book Evidence
+* Tabbed inspection of short, verbatim source excerpts from **Punjab Books**, **Federal Books**, **Syllabus Outcomes**, and **Past Papers**.
+* Exact page citations (or explicit *"Page information unavailable"* if not determinable).
+* **Copyright-Safe**: Never redistributes full books or contiguous chapters.
+
+---
+
+## 4. Local Installation & Setup
+
+### Prerequisites
+* Python 3.11, 3.12, or 3.13
+* Git
+
+### Step-by-Step Instructions
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/MediCompass_AI.git
+   cd MediCompass_AI
