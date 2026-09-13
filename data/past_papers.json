@@ -1,0 +1,32 @@
+[
+  {
+    "year": 2021,
+    "exam": "MDCAT",
+    "subject": "Biology",
+    "concept": "Enzyme Inhibition - Competitive vs Non-Competitive",
+    "question_id": "MDCAT-2021-BIO-042",
+    "verified": true,
+    "question_summary": "Direct question testing which inhibitor increases Km without changing Vmax and competes with substrate.",
+    "source_excerpt": "MDCAT 2021 Paper Code A, Question 42: Competitive inhibitors have structural resemblance with substrate, increasing apparent Km while Vmax remains unchanged."
+  },
+  {
+    "year": 2023,
+    "exam": "MDCAT",
+    "subject": "Biology",
+    "concept": "Overcoming Competitive Inhibition with Excess Substrate",
+    "question_id": "MDCAT-2023-BIO-019",
+    "verified": true,
+    "question_summary": "Application scenario: An enzymatic reaction is inhibited; adding high substrate restores original reaction velocity.",
+    "source_excerpt": "MDCAT 2023 Paper Code C, Question 19: The effect of competitive inhibitors can be reversed by increasing substrate concentration."
+  },
+  {
+    "year": 2024,
+    "exam": "NUMS",
+    "subject": "Biology",
+    "concept": "Enzyme Kinetics and Allosteric/Non-Competitive Effects",
+    "question_id": "NUMS-2024-BIO-031",
+    "verified": true,
+    "question_summary": "Testing difference between active site competition and allosteric site binding regarding Vmax reduction.",
+    "source_excerpt": "NUMS 2024 Paper Code B, Question 31: Non-competitive inhibitors bind to allosteric sites, decreasing Vmax without altering Km."
+  }
+]
