@@ -168,17 +168,48 @@ with st.sidebar:
         st.cache_resource.clear()
         st.rerun()
 
-    # Google Drive Sync Trigger (if configured)
+    # Google Drive Sync Trigger (via Secrets or Direct UI Paste)
     drive_urls_raw = st.secrets.get("GOOGLE_DRIVE_FOLDER_URLS", "")
-    if drive_urls_raw and drive_urls_raw.strip():
-        if st.button("🔄 Sync Google Drive Sources", key="sync_gdrive", use_container_width=True):
-            with st.spinner("Syncing Google Drive folders..."):
-                urls = [u.strip() for u in drive_urls_raw.splitlines() if u.strip()]
-                sync_google_drive_public_folders(urls, SOURCES_DIR)
-                st.cache_resource.clear()
-                st.success("Synced! Reloading knowledge base...")
-                time.sleep(1)
-                st.rerun()
+    has_secret_urls = bool(
+        drive_urls_raw
+        and drive_urls_raw.strip()
+        and any(not l.strip().startswith("#") for l in drive_urls_raw.splitlines() if l.strip())
+    )
+
+    with st.expander("🔗 Connect Google Drive Sources", expanded=False):
+        st.markdown(
+            "<div style='font-size: 0.8rem; color: #94A3B8; margin-bottom: 8px; line-height: 1.4;'>"
+            "Paste your public Google Drive folder or PDF links below.<br/>"
+            "<span style='color: #818CF8;'>Note:</span> Sharing must be set to <b>Anyone with the link (Viewer)</b>."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        user_drive_input = st.text_area(
+            "Drive Links",
+            value="" if not has_secret_urls else drive_urls_raw.strip(),
+            placeholder="https://drive.google.com/drive/folders/YOUR_FOLDER_ID\nhttps://drive.google.com/file/d/YOUR_FILE_ID/view",
+            height=90,
+            label_visibility="collapsed",
+            key="gdrive_input_box",
+        )
+        if st.button("📥 Sync & Ingest Drive Sources", key="btn_sync_gdrive", type="primary", use_container_width=True):
+            target_links = [
+                u.strip()
+                for u in user_drive_input.splitlines()
+                if u.strip() and not u.strip().startswith("#")
+            ]
+            if not target_links:
+                st.warning("Please enter at least one valid Google Drive link.")
+            else:
+                with st.spinner("Downloading documents from Google Drive..."):
+                    downloaded = sync_google_drive_public_folders(target_links, SOURCES_DIR)
+                    if downloaded:
+                        st.cache_resource.clear()
+                        st.success(f"Downloaded {len(downloaded)} file(s)! Updating RAG index...")
+                        time.sleep(1.2)
+                        st.rerun()
+                    else:
+                        st.error("Download failed or no files found. Make sure General Access is set to 'Anyone with the link' (Viewer).")
 
 
 # ─── PAGE 1: ANALYZE ──────────────────────────────────────────────────────────
