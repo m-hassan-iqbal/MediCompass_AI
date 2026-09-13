@@ -63,14 +63,25 @@ def get_initialized_vector_store():
     fp = compute_kb_fingerprint(SOURCES_DIR, MANIFEST_PATH)
     vs = LocalVectorStore(cache_dir=CACHE_DIR)
 
-    # Try loading cached index first, self-heal if missing or empty
-    if not vs.load_cached_index(fp) or len(vs.chunks) == 0:
+    # Try loading cached index first, self-heal if missing, empty, or method missing
+    loaded = False
+    if hasattr(vs, "load_cached_index"):
+        try:
+            loaded = vs.load_cached_index(fp)
+        except Exception:
+            loaded = False
+
+    chunks_list = getattr(vs, "chunks", [])
+    if not loaded or len(chunks_list) == 0:
         chunks = build_knowledge_base_chunks(
             sources_dir=SOURCES_DIR,
             manifest_path=MANIFEST_PATH,
             past_papers_path=PAST_PAPERS_PATH,
         )
-        vs.build_index(chunks, fp)
+        if hasattr(vs, "build_index"):
+            vs.build_index(chunks, fp)
+        else:
+            vs.chunks = chunks
 
     return vs, fp
 
@@ -154,7 +165,7 @@ with st.sidebar:
 
     # System Status
     st.markdown("<div class='sidebar-section-title'>SYSTEM STATUS</div>", unsafe_allow_html=True)
-    chunk_count = len(vector_store.chunks)
+    chunk_count = len(getattr(vector_store, "chunks", []))
     has_api_key = bool(st.session_state.groq_api_key and not st.session_state.groq_api_key.startswith("gsk_your_groq_api_key"))
 
     st.markdown(
@@ -287,14 +298,14 @@ if st.session_state.page == "analyze":
         unsafe_allow_html=True,
     )
 
-    if len(vector_store.chunks) == 0:
+    if len(getattr(vector_store, "chunks", [])) == 0:
         st.warning(
             """
             **Knowledge base not configured.**
             Add authorized PDFs to `data/sources/` or configure `GOOGLE_DRIVE_FOLDER_URLS` in Streamlit Secrets.
             """
         )
-    elif has_secret_urls and len(vector_store.chunks) <= 12:
+    elif has_secret_urls and len(getattr(vector_store, "chunks", [])) <= 12:
         st.info("💡 **Google Drive Study Sources Connected**: Your Google Drive folder is configured. Expand **Knowledge Base & Sync** in the left sidebar and click **📥 Sync Google Drive** to download and index your full textbook library into the live RAG engine.")
 
     # Selection Row
@@ -331,490 +342,277 @@ if st.session_state.page == "analyze":
         query_input = "How does increasing substrate concentration affect competitive inhibition?"
         st.session_state.query = query_input
         st.rerun()
-    if c3.button("📌 Non-Competitive vs Allosteric", use_container_width=True):
-        query_input = "Why does Vmax decrease in non-competitive inhibition?"
+    if c3.button("📌 Allosteric vs Active Site", use_container_width=True):
+        query_input = "Differences between competitive and non-competitive enzyme inhibition"
         st.session_state.query = query_input
         st.rerun()
 
-    st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
 
-    # Analyze Button
-    if st.button("✦ Generate Study Decision", type="primary", use_container_width=True):
-        if not query_input or not query_input.strip():
-            st.error("Please enter a question or topic first.")
+    # CTA Button
+    if st.button("Analyze with MediCompass →", type="primary", use_container_width=True):
+        if not query_input.strip():
+            st.error("Please enter a question or topic to analyze.")
         else:
             st.session_state.query = query_input
-            with st.spinner("Searching authoritative textbooks, PMDC syllabus, and verified past papers..."):
-                retrieved_chunks = vector_store.search(
-                    query=query_input,
-                    subject=selected_subject,
-                    exam=selected_exam,
-                    top_k=8,
+
+            # Multi-stage progress experience
+            progress_placeholder = st.empty()
+            status_stages = [
+                "Retrieving relevant evidence from Punjab, Federal & Syllabus sources...",
+                "Mapping the concept across historical MDCAT/NUMS papers...",
+                "Synthesizing source agreements and kinetic definitions...",
+                "Building your evidence-based study recommendation...",
+            ]
+
+            progress_bar = st.progress(0)
+            for step_idx, stage_text in enumerate(status_stages):
+                progress_placeholder.markdown(
+                    f"""
+                    <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 12px; padding: 14px 18px; margin: 12px 0;">
+                        <div style="font-size: 0.85rem; font-weight: 700; color: #818CF8;">STAGE {step_idx + 1} OF 4</div>
+                        <div style="font-size: 0.95rem; font-weight: 600; color: #F8FAFC; margin-top: 2px;">{stage_text}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
+                progress_bar.progress(int((step_idx + 1) * 25))
+                time.sleep(0.3)
 
-                if not retrieved_chunks:
-                    st.warning("No matching chunks found. Using foundational curriculum seed chunks.")
-                    retrieved_chunks = vector_store.chunks[:5]
-
-                analysis_result = groq_client.analyze_concept(
+            # RAG Retrieval (defensive call)
+            if hasattr(vector_store, "retrieve_relevant_chunks"):
+                retrieved = vector_store.retrieve_relevant_chunks(
                     query=query_input,
-                    retrieved_chunks=retrieved_chunks,
-                    subject=selected_subject,
-                    exam=selected_exam,
+                    subject=st.session_state.subject,
+                    exam=st.session_state.exam,
+                    top_k=6,
                 )
+            elif hasattr(vector_store, "search"):
+                retrieved = vector_store.search(
+                    query=query_input,
+                    subject=st.session_state.subject,
+                    exam=st.session_state.exam,
+                    top_k=6,
+                )
+            else:
+                retrieved = getattr(vector_store, "chunks", [])[:6]
+            st.session_state.retrieved_chunks = retrieved
 
-                st.session_state.analysis = analysis_result
-                st.session_state.quiz = None
-                st.session_state.quiz_submitted = False
-                navigate_to("concept")
+            # Groq Analysis
+            analysis = groq_client.analyze_concept(
+                query=query_input,
+                subject=st.session_state.subject,
+                exam=st.session_state.exam,
+                retrieved_chunks=retrieved,
+            )
+            st.session_state.analysis = analysis
+
+            # Pre-generate 10-MCQ Quiz
+            quiz_qs = quiz_gen.generate_10_mcq_quiz(
+                concept_title=analysis.get("concept_title", "Enzyme Kinetics"),
+                subject=st.session_state.subject,
+                exam=st.session_state.exam,
+                retrieved_chunks=retrieved,
+            )
+            st.session_state.quiz_questions = quiz_qs
+            st.session_state.quiz_answers = {}
+            st.session_state.quiz_submitted = False
+            st.session_state.quiz_score = None
+            st.session_state.quiz_time_taken = 0
+            reset_quiz_timer()
+
+            progress_placeholder.empty()
+            progress_bar.empty()
+            navigate_to("concept")
 
 
 # ─── PAGE 2: CONCEPT INTELLIGENCE ─────────────────────────────────────────────
 elif st.session_state.page == "concept":
     analysis = st.session_state.analysis
-
     if not analysis:
-        st.info("No active analysis found. Please run a study query first.")
-        if st.button("← Go to Analyze"):
-            navigate_to("analyze")
-    else:
-        col_back, col_actions = st.columns([1, 2])
-        with col_back:
-            if st.button("← New Question", use_container_width=True):
-                navigate_to("analyze")
-
-        with col_actions:
-            a1, a2, a3 = st.columns(3)
-            if a1.button("🧠 Diagram", use_container_width=True):
-                navigate_to("diagram")
-            if a2.button("✓ 10-MCQ Quiz", type="primary", use_container_width=True):
-                navigate_to("quiz")
-            if a3.button("▤ Book Evidence", use_container_width=True):
-                navigate_to("evidence")
-
-        st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
-
-        # Main Decision Hero Card
-        priority_val = analysis.get("exam_priority", "HIGH")
-        ring_html = render_fintech_priority_ring(priority_val, size=115)
-
-        st.markdown(
-            f"""
-            <div class="fintech-card">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
-                    <div style="flex: 1; min-width: 280px;">
-                        <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-                            <span class="badge-exam">{st.session_state.subject}</span>
-                            <span class="badge-exam">{st.session_state.exam}</span>
-                            <span class="badge-verified">✓ 100% Grounded in Official Sources</span>
-                        </div>
-                        <h2 style="font-size: 1.5rem; font-weight: 800; color: #FFFFFF; margin: 0 0 12px 0;">
-                            {analysis.get('core_concept', 'Concept Intelligence')}
-                        </h2>
-                        <div style="background-color: #18182E; border-left: 4px solid #6366F1; padding: 14px 18px; border-radius: 0 12px 12px 0; margin-bottom: 14px;">
-                            <div style="font-size: 0.74rem; font-weight: 800; color: #818CF8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;">
-                                THE DECISION FOR EXAM SUCCESS
-                            </div>
-                            <div style="font-size: 1.05rem; font-weight: 700; color: #FFFFFF; line-height: 1.5;">
-                                {analysis.get('the_decision', '')}
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        {ring_html}
-                    </div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # 3 Column Intelligence Grid
-        c_left, c_mid, c_right = st.columns([1, 1, 1])
-
-        with c_left:
-            st.markdown(
-                f"""
-                <div class="fintech-card" style="height: 100%;">
-                    <div style="font-size: 0.8rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px;">
-                        ◈ REASONING & EXPLANATION
-                    </div>
-                    <div style="font-size: 0.92rem; color: #CBD5E1; line-height: 1.6;">
-                        {analysis.get('explanation', '')}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with c_mid:
-            st.markdown(
-                f"""
-                <div class="fintech-card" style="height: 100%; border-color: #B45309;">
-                    <div style="font-size: 0.8rem; font-weight: 800; color: #F59E0B; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px;">
-                        ⚠️ EXAM TRAP TO AVOID
-                    </div>
-                    <div style="font-size: 0.92rem; color: #FDE68A; line-height: 1.6;">
-                        {analysis.get('trap', '')}
-                    </div>
-                    <div style="margin-top: 14px; font-size: 0.82rem; color: #FCD34D;">
-                        <b>Past Frequency:</b> {analysis.get('past_paper_frequency', 'High Yield in recent cycles')}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with c_right:
-            st.markdown(
-                f"""
-                <div class="fintech-card" style="height: 100%;">
-                    <div style="font-size: 0.8rem; font-weight: 800; color: #10B981; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px;">
-                        🧠 HIGH-YIELD MEMORY HOOK
-                    </div>
-                    <div style="font-size: 0.98rem; font-weight: 700; color: #FFFFFF; line-height: 1.6; margin-bottom: 12px;">
-                        {analysis.get('memory_hook', '')}
-                    </div>
-                    <div style="background-color: #022C22; border: 1px solid #059669; border-radius: 8px; padding: 10px; font-size: 0.8rem; color: #6EE7B7;">
-                        <b>Pro Study Tip:</b> Memorize the kinetic graph axis changes to lock in +4 points.
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-
-# ─── PAGE 3: QUICK DIAGRAM ────────────────────────────────────────────────────
-elif st.session_state.page == "diagram":
-    analysis = st.session_state.analysis
-
-    if not analysis:
-        st.info("No active analysis found. Please run a study query first.")
-        if st.button("← Go to Analyze"):
-            navigate_to("analyze")
+        st.info("Please enter a question or topic on the Analyze page first.")
     else:
         st.markdown(
             f"""
-            <div style="margin-bottom: 20px;">
-                <span class="badge-exam">{st.session_state.subject}</span>
-                <h2 style="font-size: 1.8rem; font-weight: 800; color: #FFFFFF; margin: 8px 0;">
-                    🧠 Mental Model Diagram: {analysis.get('core_concept', '')}
-                </h2>
-                <p style="color: #94A3B8; font-size: 0.95rem;">
-                    Visual process flow structured from authoritative textbook explanations.
-                </p>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                <div>
+                    <span class="badge-exam">{st.session_state.subject}</span>
+                    <span class="badge-exam">{st.session_state.exam}</span>
+                    <span class="badge-verified">✓ {len(analysis.get('source_ids', []))} Verified Citations</span>
+                    <h1 class="hero-title" style="margin-top: 10px; font-size: 2rem;">{analysis.get('concept_title', 'Concept Analysis')}</h1>
+                    <p style="color: #94A3B8; font-size: 0.95rem; margin-top: -6px;">{analysis.get('question_summary', '')}</p>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        diagram_spec = analysis.get("diagram", {})
-        if not diagram_spec:
-            diagram_spec = {
-                "type": "ENZYMATIC KINETIC CASCADE",
-                "title": analysis.get("core_concept", "Mechanism"),
-                "steps": [
-                    {"title": "1. Normal State", "desc": "Substrate binds catalytic site at steady state (Vmax)."},
-                    {"title": "2. Inhibitor Challenge", "desc": "Competitive inhibitor competes for same active site."},
-                    {"title": "3. Substrate Shift", "desc": "Increasing [S] outcompetes inhibitor, restoring Vmax (Km increases)."},
-                ],
-            }
+        col_left, col_right = st.columns([2, 1])
 
-        st.markdown(render_concept_diagram_html(diagram_spec), unsafe_allow_html=True)
-
-        st.markdown(
-            """
-            <div style="margin-top: 24px;">
-                <h3 style="font-size: 1.1rem; font-weight: 800; color: #FFFFFF;">ASCII Logic Diagram</h3>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        ascii_diagram = """
-┌───────────────────────────┐      High [Substrate]      ┌───────────────────────────┐
-│   Competitive Inhibitor   │ ─────────────────────────> │   Inhibition Overcome     │
-│  Competes for Active Site │                            │    Vmax Unchanged         │
-└───────────────────────────┘                            └───────────────────────────┘
-              │                                                        ▲
-              ▼                                                        │
-┌───────────────────────────┐                            ┌───────────────────────────┐
-│     Apparent Km Rises     │ ─────────────────────────> │   Lower Apparent Affinity │
-└───────────────────────────┘                            └───────────────────────────┘
-        """
-        st.code(ascii_diagram, language="text")
-
-        c_back, c_quiz = st.columns([1, 1])
-        with c_back:
-            if st.button("← Back to Concept Intelligence", use_container_width=True):
-                navigate_to("concept")
-        with c_quiz:
-            if st.button("Take 10-MCQ Quiz →", type="primary", use_container_width=True):
-                navigate_to("quiz")
-
-
-# ─── PAGE 4: 10-MCQ QUIZ ──────────────────────────────────────────────────────
-elif st.session_state.page == "quiz":
-    analysis = st.session_state.analysis
-
-    if not analysis:
-        st.info("No active analysis found. Please run a study query first.")
-        if st.button("← Go to Analyze"):
-            navigate_to("analyze")
-    else:
-        # Load or generate quiz
-        if st.session_state.quiz is None:
-            with st.spinner("Generating targeted 10-MCQ Concept Check from verified past papers..."):
-                retrieved_chunks = vector_store.search(
-                    query=analysis.get("core_concept", st.session_state.query),
-                    subject=st.session_state.subject,
-                    exam=st.session_state.exam,
-                    top_k=6,
-                )
-                generated_quiz = quiz_gen.generate_quiz(
-                    concept=analysis.get("core_concept", "Enzyme Inhibition"),
-                    retrieved_chunks=retrieved_chunks,
-                    subject=st.session_state.subject,
-                    exam=st.session_state.exam,
-                )
-                st.session_state.quiz = generated_quiz
-                reset_quiz_timer()
-
-        quiz = st.session_state.quiz
-        questions = quiz.get("questions", [])
-
-        st.markdown(
-            f"""
-            <div style="margin-bottom: 24px;">
-                <div class="hero-tag">MDCAT & NUMS TEST SIMULATION</div>
-                <h1 class="hero-title">10-MCQ Concept Mastery Check</h1>
-                <p class="hero-sub">
-                    Topic: <b>{quiz.get('topic', 'Concept Check')}</b> • Target: <b>{st.session_state.exam}</b>
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        if not st.session_state.quiz_submitted:
-            with st.form("quiz_form"):
-                for q in questions:
-                    q_id = q.get("id", 1)
-                    st.markdown(
-                        f"""
-                        <div style="background-color: #0F172A; border: 1.5px solid #1E293B; border-radius: 16px; padding: 20px; margin-bottom: 18px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                <span style="background-color: #1E293B; color: #818CF8; font-weight: 800; font-size: 0.75rem; padding: 4px 10px; border-radius: 6px;">
-                                    QUESTION {q_id} OF 10
-                                </span>
-                                <span style="font-size: 0.75rem; color: #94A3B8; font-weight: 700;">
-                                    {q.get('type', 'Conceptual Reasoning')}
-                                </span>
-                            </div>
-                            <div style="font-size: 1.02rem; font-weight: 700; color: #FFFFFF; line-height: 1.5; margin-bottom: 14px;">
-                                {q.get('question', '')}
-                            </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                    opts = q.get("options", [])
-                    st.radio(
-                        f"Select your answer for Q{q_id}:",
-                        opts,
-                        key=f"user_q_{q_id}",
-                        index=None,
-                        label_visibility="collapsed",
-                    )
-                    st.markdown("<div style='margin-bottom: 14px;'></div>", unsafe_allow_html=True)
-
-                submit_btn = st.form_submit_button("Submit 10-Question Quiz & Grade", type="primary", use_container_width=True)
-                if submit_btn:
-                    answers = {}
-                    for q in questions:
-                        qid = q.get("id")
-                        answers[qid] = st.session_state.get(f"user_q_{qid}", None)
-
-                    score = grade_quiz_submission(quiz, answers)
-                    st.session_state.quiz_submitted = True
-                    st.session_state.quiz_score = score
-                    st.session_state.user_answers = answers
-                    st.session_state.quiz_time_taken = get_quiz_timer_state()
-                    st.rerun()
-
-        else:
-            # Scoreboard View
-            score = st.session_state.quiz_score
-            time_taken = st.session_state.quiz_time_taken
-            score_ring = render_fintech_score_ring(score, total=10, size=135)
-
+        with col_left:
             st.markdown(
                 f"""
-                <div class="fintech-card" style="text-align: center; padding: 32px 24px;">
-                    <div style="display: flex; justify-content: center; margin-bottom: 16px;">
-                        {score_ring}
+                <div class="fintech-card">
+                    <div style="font-size: 0.78rem; font-weight: 800; color: #818CF8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;">
+                        THE STUDY DECISION
                     </div>
-                    <h2 style="font-size: 1.6rem; font-weight: 800; color: #FFFFFF; margin: 0 0 8px 0;">
-                        {'Outstanding Mastery! 🎯' if score >= 8 else ('Good Effort! Review High Yield Traps ⚠️' if score >= 5 else 'Needs Dedicated Concept Review 📚')}
-                    </h2>
-                    <p style="color: #94A3B8; font-size: 0.95rem; margin: 0 0 20px 0;">
-                        Time elapsed: <b>{time_taken // 60}m {time_taken % 60}s</b> • Accuracy: <b>{score * 10}%</b>
-                    </p>
+                    <div style="font-size: 1.15rem; font-weight: 700; color: #FFFFFF; line-height: 1.6;">
+                        {analysis.get('core_explanation', '')}
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            # Question by question review
-            st.markdown("<h3 style='font-size: 1.25rem; font-weight: 800; color: #FFFFFF; margin: 24px 0 16px 0;'>Detailed Question Breakdown & Explanations</h3>", unsafe_allow_html=True)
-
-            for q in questions:
-                q_id = q.get("id")
-                correct = q.get("answer")
-                user_ans = st.session_state.user_answers.get(q_id)
-                is_correct = (user_ans == correct)
-
-                badge_color = "#10B981" if is_correct else "#EF4444"
-                badge_text = "✓ CORRECT (+1)" if is_correct else "✗ INCORRECT (0)"
-
+            st.markdown("<div style='font-weight: 800; font-size: 1.1rem; color: #FFFFFF; margin: 24px 0 12px 0;'>Authoritative Breakdown</div>", unsafe_allow_html=True)
+            for item in analysis.get("deep_explanation", []):
                 st.markdown(
                     f"""
-                    <div class="fintech-card" style="border-color: {'#065F46' if is_correct else '#991B1B'};">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <span style="font-size: 0.8rem; font-weight: 800; color: {badge_color};">
-                                {badge_text}
-                            </span>
-                            <span style="font-size: 0.76rem; color: #94A3B8; font-weight: 600;">
-                                Past Reference: {q.get('past_paper', 'MDCAT verified')}
-                            </span>
+                    <div style="background: #0F172A; border-left: 3px solid #6366F1; border-radius: 0 10px 10px 0; padding: 12px 16px; margin-bottom: 10px; font-size: 0.92rem; color: #E2E8F0; line-height: 1.5;">
+                        {item}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        with col_right:
+            priority_score = analysis.get("priority_score", 70)
+            priority_label = analysis.get("priority_label", "STUDY NOW")
+            ring_html = render_fintech_priority_ring(priority_label, size=130)
+
+            st.markdown(
+                f"""
+                <div class="fintech-card" style="text-align: center;">
+                    {ring_html}
+                    <div style="font-size: 1.3rem; font-weight: 800; color: #FFFFFF; margin-top: 10px;">
+                        Priority: {priority_label}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 8px; line-height: 1.4;">
+                        {analysis.get('priority_reason', '')}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            hook = analysis.get("memory_hook", "")
+            if hook:
+                st.markdown(
+                    f"""
+                    <div class="memory-box">
+                        <div style="font-size: 0.72rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;">
+                            💡 MEMORY HOOK
                         </div>
-                        <div style="font-size: 1.02rem; font-weight: 700; color: #FFFFFF; margin-bottom: 12px; line-height: 1.5;">
-                            Q{q_id}: {q.get('question', '')}
-                        </div>
-                        <div style="font-size: 0.88rem; margin-bottom: 6px; color: #CBD5E1;">
-                            <b>Your Answer:</b> <span style="color: {'#6EE7B7' if is_correct else '#FCA5A5'}; font-weight: 700;">{user_ans or 'Unanswered'}</span>
-                        </div>
-                        <div style="font-size: 0.88rem; margin-bottom: 12px; color: #CBD5E1;">
-                            <b>Correct Key:</b> <span style="color: #6EE7B7; font-weight: 700;">{correct}</span>
-                        </div>
-                        <div style="background-color: #080B11; border: 1px solid #1E293B; border-radius: 10px; padding: 12px; font-size: 0.85rem; color: #94A3B8; line-height: 1.5;">
-                            <b>Why?</b> {q.get('explanation', '')}
+                        <div style="font-size: 0.95rem; font-weight: 700; line-height: 1.4;">
+                            {hook}
                         </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
 
-            if st.button("↺ Retake Quiz / Generate New Variants", type="primary", use_container_width=True):
-                st.session_state.quiz = None
-                st.session_state.quiz_submitted = False
-                st.rerun()
+
+# ─── PAGE 3: QUICK DIAGRAM ────────────────────────────────────────────────────
+elif st.session_state.page == "diagram":
+    analysis = st.session_state.analysis
+    if not analysis:
+        st.info("Run an analysis first to view its concept diagram.")
+    else:
+        diagram_spec = analysis.get("diagram", {})
+        st.markdown("<h2 class='hero-title' style='font-size: 1.8rem;'>🧠 Concept Diagram & Mental Flow</h2>", unsafe_allow_html=True)
+        st.markdown(render_concept_diagram_html(diagram_spec), unsafe_allow_html=True)
+
+
+# ─── PAGE 4: 10-MCQ QUIZ ──────────────────────────────────────────────────────
+elif st.session_state.page == "quiz":
+    analysis = st.session_state.analysis
+    quiz_qs = st.session_state.get("quiz_questions", [])
+
+    if not analysis or not quiz_qs:
+        st.info("Run an analysis first to generate your 10-MCQ test.")
+    else:
+        st.markdown("<h2 class='hero-title' style='font-size: 1.8rem;'>✓ 10-MCQ Concept Mastery Test</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #94A3B8; margin-top: -6px;'>Directly calibrated to MDCAT & NUMS past paper patterns.</p>", unsafe_allow_html=True)
+
+        with st.form("quiz_form"):
+            for idx, q in enumerate(quiz_qs):
+                st.markdown(
+                    f"""
+                    <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 14px; padding: 18px; margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8;">QUESTION {idx + 1} OF 10</span>
+                            <span style="font-size: 0.75rem; color: #94A3B8;">{q.get('type', 'Conceptual Reasoning')}</span>
+                        </div>
+                        <div style="font-size: 1rem; font-weight: 700; color: #FFFFFF; line-height: 1.5;">
+                            {q.get('question', '')}
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                selected_opt = st.radio(
+                    f"Options for Q{idx+1}",
+                    options=q.get("options", []),
+                    key=f"q_{idx}",
+                    index=None,
+                    label_visibility="collapsed",
+                )
+                st.session_state.quiz_answers[idx] = selected_opt
+
+            submit_quiz = st.form_submit_button("Submit 10-Question Test", type="primary", use_container_width=True)
+
+        if submit_quiz:
+            score, results = grade_quiz_submission(quiz_qs, st.session_state.quiz_answers)
+            st.session_state.quiz_submitted = True
+            st.session_state.quiz_score = score
+            st.session_state.quiz_results = results
+            st.session_state.quiz_time_taken = get_quiz_timer_state()
+            st.rerun()
+
+        if st.session_state.quiz_submitted:
+            score = st.session_state.quiz_score
+            score_ring = render_fintech_score_ring(score, total=10, size=135)
+
+            st.markdown(
+                f"""
+                <div class="fintech-card" style="text-align: center; margin-top: 24px;">
+                    {score_ring}
+                    <h3 style="font-size: 1.4rem; font-weight: 800; color: #FFFFFF; margin-top: 14px;">
+                        {'Mastery Achieved! 🎯' if score >= 8 else ('Target Met — Review Mistakes ⚠️' if score >= 5 else 'Needs Immediate Concept Revision 📚')}
+                    </h3>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 # ─── PAGE 5: BOOK EVIDENCE ────────────────────────────────────────────────────
 elif st.session_state.page == "evidence":
     analysis = st.session_state.analysis
-
     if not analysis:
-        st.info("No active analysis found. Please run a study query first.")
-        if st.button("← Go to Analyze"):
-            navigate_to("analyze")
+        st.info("Run an analysis first to view its source citations.")
     else:
-        st.markdown(
-            f"""
-            <div style="margin-bottom: 24px;">
-                <div class="hero-tag">PRIMARY SOURCE CROSS-REFERENCE</div>
-                <h1 class="hero-title">Authoritative Evidence Citations</h1>
-                <p class="hero-sub">
-                    Direct citations from official provincial textbooks and PMDC curriculum.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("<h2 class='hero-title' style='font-size: 1.8rem;'>▤ Authoritative Book Evidence</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #94A3B8; margin-top: -6px;'>Exact cross-references from official textbooks and PMDC syllabus.</p>", unsafe_allow_html=True)
 
-        evidence = analysis.get("evidence", {})
-
-        # Punjab Textbook Board
-        ptb = evidence.get("punjab_textbook", {})
         st.markdown(
             f"""
             <div class="fintech-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 1.2rem;">🏛</span>
-                        <h3 style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF; margin: 0;">Punjab Curriculum & Textbook Board (PTB)</h3>
-                    </div>
-                    <span class="badge-exam">Page {ptb.get('page', '3')}</span>
+                <div style="font-size: 0.8rem; font-weight: 800; color: #818CF8; text-transform: uppercase; margin-bottom: 8px;">
+                    🏛 Punjab Curriculum & Textbook Board (PTB)
                 </div>
-                <div style="font-size: 0.85rem; color: #818CF8; font-weight: 700; margin-bottom: 8px;">
-                    {ptb.get('chapter', 'Chapter 11: Enzymes and Metabolism')} • Edition: {ptb.get('edition', '2023-24')}
-                </div>
-                <div class="source-excerpt">
-                    "{ptb.get('excerpt', 'Competitive inhibitors resemble substrate and can be overcome by increasing substrate.')}"
+                <div style="font-size: 0.95rem; color: #E2E8F0; line-height: 1.6;">
+                    {analysis.get('punjab_synthesis', 'Grounded in prescribed Punjab textbooks.')}
                 </div>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # Federal Board / National Book Foundation
-        fed = evidence.get("federal_textbook", {})
-        st.markdown(
-            f"""
             <div class="fintech-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 1.2rem;">📘</span>
-                        <h3 style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF; margin: 0;">Federal Board (National Book Foundation)</h3>
-                    </div>
-                    <span class="badge-exam">Page {fed.get('page', '2')}</span>
+                <div style="font-size: 0.8rem; font-weight: 800; color: #818CF8; text-transform: uppercase; margin-bottom: 8px;">
+                    📘 Federal Board / National Book Foundation
                 </div>
-                <div style="font-size: 0.85rem; color: #818CF8; font-weight: 700; margin-bottom: 8px;">
-                    {fed.get('chapter', 'Chapter 3: Enzymes')} • Edition: {fed.get('edition', '2023-24')}
-                </div>
-                <div class="source-excerpt">
-                    "{fed.get('excerpt', 'In competitive inhibition, Km increases because higher substrate concentration is required.')}"
+                <div style="font-size: 0.95rem; color: #E2E8F0; line-height: 1.6;">
+                    {analysis.get('federal_synthesis', 'Grounded in prescribed Federal textbooks.')}
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-
-        # PMDC Syllabus Outcome
-        pmdc = evidence.get("pmdc_syllabus", {})
-        st.markdown(
-            f"""
-            <div class="fintech-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 1.2rem;">📋</span>
-                        <h3 style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF; margin: 0;">PMDC Official Curriculum Outcome</h3>
-                    </div>
-                    <span class="badge-verified">Official Learning Outcome</span>
-                </div>
-                <div style="font-size: 0.85rem; color: #818CF8; font-weight: 700; margin-bottom: 8px;">
-                    Standard: {pmdc.get('standard', '2.4')}
-                </div>
-                <div class="source-excerpt">
-                    "{pmdc.get('outcome', 'Distinguish between competitive and non-competitive inhibitors in terms of binding site, substrate competition, Km and Vmax.')}"
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        if st.button("← Back to Concept Intelligence", use_container_width=True):
-            navigate_to("concept")
-
-
-# ─── FOOTER ───────────────────────────────────────────────────────────────────
-st.markdown(
-    """
-    <div style="text-align: center; margin-top: 40px; padding: 20px 0; border-top: 1px solid #1E293B; color: #64748B; font-size: 0.78rem;">
-        MediCompass AI • Authoritative Medical Entrance Test Intelligence • Grounded in Punjab & Federal Textbooks
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
