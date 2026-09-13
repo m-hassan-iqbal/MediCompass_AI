@@ -63,6 +63,7 @@ def get_initialized_vector_store():
     fp = compute_kb_fingerprint(SOURCES_DIR, MANIFEST_PATH)
     vs = LocalVectorStore(cache_dir=CACHE_DIR)
 
+    # Try loading cached index first, self-heal if missing, empty, or method missing
     loaded = False
     if hasattr(vs, "load_cached_index"):
         try:
@@ -86,7 +87,6 @@ def get_initialized_vector_store():
 
 
 # ─── SECRETS & BACKEND CONFIGURATION ──────────────────────────────────────────
-# End-users cannot see or edit these. Configured via Streamlit Cloud Secrets (or .streamlit/secrets.toml)
 DEFAULT_DRIVE_URL = "https://drive.google.com/drive/folders/12JMNPPtw9ranu47PpEOFTqupACOHO66q?usp=sharing"
 
 
@@ -128,6 +128,8 @@ try:
 except Exception:
     pass
 groq_model = os.environ.get("GROQ_MODEL", groq_model)
+if groq_model in ["llama-3.1-8b-instant", "llama3.1-8b", "llama-3.1-8b"]:
+    groq_model = "llama-3.3-70b-versatile"
 
 groq_client = GroqClient(api_key=current_groq_key, model=groq_model)
 quiz_gen = QuizGenerator(api_key=current_groq_key, model=groq_model)
@@ -218,219 +220,171 @@ with st.sidebar:
             <div>• Knowledge Base: {kb_text}</div>
             <div>• Official Books: <b style="color: #FFFFFF;">Punjab & Federal SNC</b></div>
             <div>• Past Papers: <b style="color: #FFFFFF;">MDCAT & NUMS 2021-25</b></div>
-            <div>• AI Reasoning: {ai_text}</div>
+            <div>• RAG Engine: {ai_text}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if chunk_count < 1000:
-        with st.expander("ℹ️ Knowledge Base Notice", expanded=False):
-            st.markdown(
-                """
-                <div style="font-size: 0.78rem; color: #94A3B8; line-height: 1.4;">
-                    Running on verified multi-subject seed chunks. To unlock all <b>7,694 chunks</b> from your Google Drive textbooks on Streamlit Cloud, ensure <code>data/knowledge_base.json</code> is committed and pushed to your GitHub repository.
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
 
-
-# ─── PAGE 1: ANALYZE ──────────────────────────────────────────────────────────
+# ─── PAGE 1: ANALYZE / LANDING ───────────────────────────────────────────────
 if st.session_state.page == "analyze":
     st.markdown(
         """
-        <div style="margin-bottom: 28px;">
-            <div class="hero-tag">MDCAT • NUMS • Evidence-Based</div>
-            <h1 class="hero-title">Study the concept, not the content overload.</h1>
+        <div style="margin-bottom: 24px;">
+            <div class="hero-tag">PMDC CURRICULUM • MULTI-BOARD RAG INTELLIGENCE</div>
+            <h1 class="hero-title">Transform Exam Complexity into Clinical Clarity</h1>
             <p class="hero-sub">
-                Enter an exam question or topic. MediCompass retrieves relevant evidence from your configured
-                knowledge base and turns it into one clear study decision.
+                Enter any MDCAT/NUMS past paper question or topic. MediCompass retrieves exact curriculum paragraphs
+                from Punjab & Federal National textbooks, checks syllabus alignment, and synthesizes study intelligence.
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    col_sub, col_exam = st.columns([1, 1])
-    with col_sub:
-        subject_options = ["Biology", "Chemistry", "Physics"]
-        curr_sub_idx = subject_options.index(st.session_state.subject) if st.session_state.subject in subject_options else 0
-        selected_subject = st.selectbox("Select Subject", subject_options, index=curr_sub_idx)
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        selected_subject = st.selectbox(
+            "Select Subject",
+            ["Biology", "Chemistry", "Physics"],
+            index=["Biology", "Chemistry", "Physics"].index(st.session_state.subject)
+            if st.session_state.subject in ["Biology", "Chemistry", "Physics"]
+            else 0,
+        )
         st.session_state.subject = selected_subject
 
-    with col_exam:
-        exam_options = ["MDCAT", "NUMS", "MDCAT + NUMS"]
-        curr_exam_idx = exam_options.index(st.session_state.exam) if st.session_state.exam in exam_options else 0
-        selected_exam = st.selectbox("Select Target Exam", exam_options, index=curr_exam_idx)
+    with col2:
+        selected_exam = st.selectbox(
+            "Target Examination",
+            ["MDCAT", "NUMS", "MDCAT & NUMS"],
+            index=["MDCAT", "NUMS", "MDCAT & NUMS"].index(st.session_state.exam)
+            if st.session_state.exam in ["MDCAT", "NUMS", "MDCAT & NUMS"]
+            else 0,
+        )
         st.session_state.exam = selected_exam
 
-    query_input = st.text_area(
-        "Enter Exam Question, Topic, or Concept",
+    user_query = st.text_area(
+        "Enter Past Paper Question or Concept Topic",
         value=st.session_state.query,
-        placeholder="Example:\nWhich type of enzyme inhibition increases Km without changing Vmax?\n\nOr:\nEnzyme inhibition",
         height=130,
-        help="You can enter a full multiple-choice question stem, a specific topic, or a short keyword.",
+        placeholder="e.g. Mitochondria, Enzyme Inhibition (Competitive vs Non-competitive), or Newton's 3rd Law of Motion...",
     )
 
-    st.markdown("<div style='font-size: 0.85rem; color: #CBD5E1; margin-bottom: 8px; font-weight: 700;'>Quick test prompts:</div>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    if c1.button("📌 Newton's Third Law & Motion", use_container_width=True):
-        st.session_state.subject = "Physics"
-        st.session_state.query = "Why do action and reaction forces according to Newton's third law never cancel each other?"
-        st.rerun()
-    if c2.button("📌 Enzyme Inhibition & Kinetics", use_container_width=True):
-        st.session_state.subject = "Biology"
-        st.session_state.query = "Which type of enzyme inhibition increases Km without changing Vmax?"
-        st.rerun()
-    if c3.button("📌 Periodic Trends & Bonding", use_container_width=True):
-        st.session_state.subject = "Chemistry"
-        st.session_state.query = "Why does Nitrogen have a higher first ionization energy than Oxygen?"
-        st.rerun()
+    c_btn1, c_btn2, c_btn3 = st.columns([1.5, 1, 1])
+    with c_btn1:
+        analyze_clicked = st.button("✦ Generate Concept Intelligence", type="primary", use_container_width=True)
+    with c_btn2:
+        if st.button("Try: Mitochondria", use_container_width=True):
+            user_query = "Mitochondria cristae ATP matrix and Krebs cycle"
+            st.session_state.subject = "Biology"
+            analyze_clicked = True
+    with c_btn3:
+        if st.button("Try: Newton's 3rd Law", use_container_width=True):
+            user_query = "Why action and reaction forces never cancel each other"
+            st.session_state.subject = "Physics"
+            analyze_clicked = True
 
-    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+    if analyze_clicked:
+        if not user_query.strip():
+            user_query = "Mitochondria structure and cellular respiration"
 
-    if st.button("Analyze with MediCompass →", type="primary", use_container_width=True):
-        if not query_input.strip():
-            st.error("Please enter a question or topic to analyze.")
-        else:
-            st.session_state.query = query_input
+        st.session_state.query = user_query.strip()
 
-            progress_placeholder = st.empty()
-            status_stages = [
-                "Retrieving relevant evidence from Punjab, Federal & Syllabus sources...",
-                "Mapping the concept across historical MDCAT/NUMS papers...",
-                "Synthesizing source agreements and kinetic definitions...",
-                "Building your evidence-based study recommendation...",
-            ]
-
-            progress_bar = st.progress(0)
-            for step_idx, stage_text in enumerate(status_stages):
-                progress_placeholder.markdown(
-                    f"""
-                    <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 12px; padding: 14px 18px; margin: 12px 0;">
-                        <div style="font-size: 0.85rem; font-weight: 700; color: #818CF8;">STAGE {step_idx + 1} OF 4</div>
-                        <div style="font-size: 0.95rem; font-weight: 600; color: #F8FAFC; margin-top: 2px;">{stage_text}</div>
+        # Multi-stage progress indicator
+        progress_box = st.empty()
+        with progress_box.container():
+            st.markdown(
+                """
+                <div class="fintech-card" style="text-align: center; padding: 24px;">
+                    <div style="font-size: 1.1rem; font-weight: 700; color: #818CF8; margin-bottom: 8px;">
+                        ✦ Retrieving Verified Book Evidence & Synthesizing...
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                progress_bar.progress(int((step_idx + 1) * 25))
-                time.sleep(0.2)
+                    <div style="font-size: 0.85rem; color: #94A3B8;">
+                        Searching Punjab Board, Federal Board, and official PMDC Past Papers...
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-            if hasattr(vector_store, "retrieve_relevant_chunks"):
-                retrieved = vector_store.retrieve_relevant_chunks(
-                    query=query_input,
-                    subject=st.session_state.subject,
-                    exam=st.session_state.exam,
-                    top_k=6,
-                )
-            elif hasattr(vector_store, "search"):
-                retrieved = vector_store.search(
-                    query=query_input,
-                    subject=st.session_state.subject,
-                    exam=st.session_state.exam,
-                    top_k=6,
-                )
-            else:
-                retrieved = getattr(vector_store, "chunks", [])[:6]
+            # RAG Retrieval
+            retrieved = vector_store.search(
+                query=st.session_state.query,
+                subject=st.session_state.subject,
+                exam=st.session_state.exam,
+                top_k=5,
+            )
             st.session_state.retrieved_chunks = retrieved
 
+            # Groq / LLM Analysis
             analysis = groq_client.analyze_concept(
-                query=query_input,
+                query=st.session_state.query,
                 subject=st.session_state.subject,
                 exam=st.session_state.exam,
                 retrieved_chunks=retrieved,
             )
             st.session_state.analysis = analysis
 
-            quiz_qs = quiz_gen.generate_10_mcq_quiz(
-                concept_title=analysis.get("concept_title", f"{st.session_state.subject} Concept"),
+            # Pre-generate 10-MCQ quiz questions
+            quiz_questions = quiz_gen.generate_10_mcq_quiz(
+                concept_title=analysis.get("concept_title", st.session_state.query),
                 subject=st.session_state.subject,
                 exam=st.session_state.exam,
                 retrieved_chunks=retrieved,
             )
-            st.session_state.quiz_questions = quiz_qs
+            st.session_state.quiz_questions = quiz_questions
             st.session_state.quiz_answers = {}
             st.session_state.quiz_submitted = False
             st.session_state.quiz_result = None
             reset_quiz_timer()
 
-            progress_placeholder.empty()
-            progress_bar.empty()
-            navigate_to("concept")
+        progress_box.empty()
+        navigate_to("concept")
 
 
 # ─── PAGE 2: CONCEPT INTELLIGENCE ─────────────────────────────────────────────
 elif st.session_state.page == "concept":
     analysis = st.session_state.analysis
     if not analysis:
-        st.info("No active analysis found. Please start by entering a topic on the Analyze page.")
+        st.info("No active analysis found. Please enter a question or concept to analyze.")
         if st.button("Go to Analyze", type="primary"):
             navigate_to("analyze")
         st.stop()
 
-    concept_title = analysis.get("concept_title", "Concept Intelligence")
+    concept_title = analysis.get("concept_title", "Concept Analysis")
+
+    # Breadcrumb / Navigation bar
+    col_back, col_actions = st.columns([1, 2])
+    with col_back:
+        if st.button("← New Analysis", use_container_width=True):
+            navigate_to("analyze")
+    with col_actions:
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("🧠 Quick Memorize Diagram", use_container_width=True):
+                navigate_to("diagram")
+        with b2:
+            if st.button("🎯 Attempt 10 Focused MCQs", type="primary", use_container_width=True):
+                navigate_to("quiz")
+
     st.markdown(
         f"""
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
-            <div>
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                    <span class="badge-exam">{st.session_state.subject}</span>
-                    <span class="badge-exam">{st.session_state.exam}</span>
-                    <span class="badge-verified">✓ EVIDENCE-GROUNDED</span>
-                </div>
-                <h1 style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; margin: 0;">{concept_title}</h1>
+        <div style="margin: 18px 0 24px 0;">
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                <span class="badge-exam">{st.session_state.subject}</span>
+                <span class="badge-exam">{st.session_state.exam}</span>
             </div>
+            <h1 style="font-size: 2.2rem; font-weight: 800; color: #FFFFFF; margin: 0;">
+                {concept_title}
+            </h1>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if analysis.get("api_status") == "error":
-        err_msg = analysis.get("api_error", "Connection error")
-        st.markdown(
-            f"""
-            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 10px 14px; margin-bottom: 18px;">
-                <div style="font-size: 0.84rem; color: #FDE68A; font-weight: 700;">
-                    ⚡ Direct Curriculum Textbook Mode Active (Groq AI Notice: {err_msg})
-                </div>
-                <div style="font-size: 0.8rem; color: #CBD5E1; margin-top: 2px;">
-                    Synthesizing evidence-grounded intelligence directly from verified curriculum textbooks and past papers.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    elif not groq_ready:
-        st.markdown(
-            """
-            <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 10px 14px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between;">
-                <div style="font-size: 0.84rem; color: #E0F2FE;">
-                    <b>⚡ Direct Textbook RAG Mode:</b> Grounded directly in your verified curriculum documents.
-                </div>
-                <div style="font-size: 0.8rem; color: #38BDF8; font-weight: 700;">
-                    Add GROQ_API_KEY in Streamlit Secrets for Llama-3.3 dynamic reasoning
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    b1, b2, b3 = st.columns(3)
-    with b1:
-        if st.button("🧠 Quick Memorize Diagram", key="btn_to_diag", use_container_width=True):
-            navigate_to("diagram")
-    with b2:
-        if st.button("🎯 Attempt 10 Focused MCQs", key="btn_to_quiz", type="primary", use_container_width=True):
-            navigate_to("quiz")
-    with b3:
-        if st.button("📖 Visit Exact Book Evidence", key="btn_to_evid", use_container_width=True):
-            navigate_to("evidence")
-
-    st.markdown("<div style='margin-top: 18px;'></div>", unsafe_allow_html=True)
-
-    col_core, col_priority = st.columns([2.4, 1.2])
+    # Core Concept & Priority Row
+    col_core, col_priority = st.columns([2.1, 1])
 
     with col_core:
         st.markdown(
@@ -442,7 +396,7 @@ elif st.session_state.page == "concept":
                     </span>
                     <span class="badge-verified">VERIFIED</span>
                 </div>
-                <p style="font-size: 1.05rem; font-weight: 600; color: #F8FAFC; line-height: 1.6; margin-bottom: 14px;">
+                <p style="font-size: 1.05rem; color: #F8FAFC; line-height: 1.65; margin: 0 0 16px 0; font-weight: 500;">
                     {analysis.get('core_explanation', '')}
                 </p>
                 <div class="memory-box">
@@ -465,7 +419,7 @@ elif st.session_state.page == "concept":
 
         accuracy = st.session_state.student_accuracy
         if accuracy is None:
-            perf_text = "⚠ Personal performance: Not available yet (Take 10-MCQ quiz to calibrate)"
+            perf_text = "⚠ Personal performance: Not recorded (take 10-MCQ quiz to calibrate)"
         else:
             perf_text = f"✓ Personal performance: {accuracy}% Accuracy recorded"
 
@@ -473,10 +427,10 @@ elif st.session_state.page == "concept":
             f"""
             <div class="fintech-card" style="text-align: center;">
                 {ring_svg}
-                <div style="font-size: 0.75rem; color: #94A3B8; text-align: left; margin-top: 14px; line-height: 1.5; border-top: 1px solid #1E293B; padding-top: 10px;">
-                    <div style="font-weight: 700; margin-bottom: 4px; color: #FFFFFF;">Formula Breakdown:</div>
-                    <div>✓ Syllabus weight: 40/40</div>
-                    <div>✓ Historical past papers: 35/35</div>
+                <div style="font-size: 0.8rem; color: #94A3B8; text-align: left; line-height: 1.5; margin-top: 14px; border-top: 1px solid #1E293B; padding-top: 12px;">
+                    <div style="font-weight: 700; color: #CBD5E1; margin-bottom: 4px;">Priority Formula:</div>
+                    <div>✓ PMDC Syllabus Weight: 40%</div>
+                    <div>✓ Historical Past Paper Signal: 35%</div>
                     <div>{perf_text}</div>
                 </div>
             </div>
@@ -484,166 +438,198 @@ elif st.session_state.page == "concept":
             unsafe_allow_html=True,
         )
 
-    deep_pts = analysis.get("deep_explanation", [])
-    if deep_pts:
-        pts_html = ""
-        for pt in deep_pts:
-            if "[VERIFIED]" in pt:
-                badge = '<span class="badge-verified" style="margin-right: 6px;">VERIFIED</span>'
-                clean_pt = pt.replace("[VERIFIED]", "").strip()
-            elif "[INFERENCE]" in pt:
-                badge = '<span class="badge-inference" style="margin-right: 6px;">INFERENCE</span>'
-                clean_pt = pt.replace("[INFERENCE]", "").strip()
-            else:
-                badge = ""
-                clean_pt = pt.strip()
-            pts_html += f"<li style='margin-bottom: 10px; line-height: 1.6; font-size: 0.96rem; color: #CBD5E1;'>{badge}{clean_pt}</li>"
-
+    # Detailed Step-by-Step Explanation
+    deep_exp = analysis.get("deep_explanation", [])
+    if deep_exp:
         st.markdown(
-            f"""
-            <div class="fintech-card" style="margin-top: 18px;">
-                <div style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px;">
-                    HIGH-YIELD PRINCIPLES & EXAM TRAPS
-                </div>
-                <ul style="padding-left: 18px; margin: 0;">
-                    {pts_html}
-                </ul>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("<h3 style='font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 26px 0 14px 0;'>Authoritative Textbook Breakdown</h3>", unsafe_allow_html=True)
-    col_ptb, col_fed = st.columns(2)
-
-    with col_ptb:
-        st.markdown(
-            f"""
+            """
             <div class="fintech-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span style="font-weight: 800; color: #F8FAFC; font-size: 0.95rem;">Punjab Textbook Board (PTB)</span>
-                    <span class="badge-verified">OFFICIAL CURRICULUM</span>
-                </div>
-                <p style="font-size: 0.92rem; color: #CBD5E1; line-height: 1.55; margin-bottom: 8px;">
-                    {analysis.get('punjab_synthesis', '')}
-                </p>
-            </div>
+                <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
+                    DEEP CONCEPTUAL DECONSTRUCTION
+                </span>
+                <h3 style="font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 6px 0 16px 0;">
+                    How It Works & High-Yield Exam Mechanics
+                </h3>
             """,
             unsafe_allow_html=True,
         )
+        for pt in deep_exp:
+            pt_clean = pt.replace("[VERIFIED]", "").replace("[INFERENCE]", "").strip()
+            is_trap = "Trap" in pt or "Common" in pt
+            icon = "⚠" if is_trap else "✦"
+            border_color = "#F59E0B" if is_trap else "#334155"
+            bg_color = "#18140B" if is_trap else "#090D16"
 
-    with col_fed:
-        st.markdown(
-            f"""
-            <div class="fintech-card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span style="font-weight: 800; color: #F8FAFC; font-size: 0.95rem;">Federal Board (NBF)</span>
-                    <span class="badge-verified">OFFICIAL CURRICULUM</span>
-                </div>
-                <p style="font-size: 0.92rem; color: #CBD5E1; line-height: 1.55; margin-bottom: 8px;">
-                    {analysis.get('federal_synthesis', '')}
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("<h3 style='font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 26px 0 14px 0;'>Historical MDCAT & NUMS Evidence</h3>", unsafe_allow_html=True)
-    past_evid = analysis.get("past_paper_evidence", [])
-    if past_evid:
-        for ep in past_evid:
             st.markdown(
                 f"""
-                <div class="past-paper-card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="font-weight: 800; color: #FFFFFF; font-size: 0.92rem;">
-                            {ep.get('exam', 'MDCAT')} {ep.get('year', 'Recent')}
-                        </span>
-                        <span class="badge-verified">VERIFIED EXAM OUTCOME</span>
-                    </div>
-                    <div style="font-size: 0.92rem; color: #CBD5E1; line-height: 1.5;">
-                        {ep.get('summary', '')}
+                <div style="background: {bg_color}; border: 1px solid {border_color}; border-radius: 12px; padding: 14px 18px; margin-bottom: 12px; display: flex; gap: 14px; align-items: flex-start;">
+                    <span style="font-size: 1.1rem; color: {'#F59E0B' if is_trap else '#818CF8'}; font-weight: 800; line-height: 1.4;">{icon}</span>
+                    <div style="font-size: 0.95rem; color: #E2E8F0; line-height: 1.6; font-weight: 500;">
+                        {pt_clean}
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
-    c_btn1, c_btn2 = st.columns(2)
-    with c_btn1:
-        if st.button("← Analyze Another Topic", use_container_width=True):
-            navigate_to("analyze")
-    with c_btn2:
-        if st.button("Test This Concept (10 MCQs) →", type="primary", use_container_width=True):
-            navigate_to("quiz")
+    # Cross-Board Comparison: Punjab vs Federal
+    st.markdown(
+        """
+        <div class="fintech-card">
+            <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
+                CROSS-BOARD SYNTHESIS
+            </span>
+            <h3 style="font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 16px 0;">
+                Curriculum Concordance: Punjab vs. Federal
+            </h3>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    c_pj, c_fed = st.columns(2)
+    with c_pj:
+        st.markdown(
+            f"""
+            <div style="background: #080B11; border: 1.5px solid #1E293B; border-radius: 14px; padding: 18px; height: 100%;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <span style="background: #064E3B; color: #A7F3D0; font-size: 0.72rem; font-weight: 800; padding: 3px 10px; border-radius: 6px;">PUNJAB TEXTBOOK</span>
+                    <span style="font-size: 0.8rem; color: #94A3B8;">PTB Official</span>
+                </div>
+                <div style="font-size: 0.92rem; color: #CBD5E1; line-height: 1.6;">
+                    {analysis.get('punjab_synthesis', 'Grounded in Punjab Textbook Curriculum guidelines.')}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c_fed:
+        st.markdown(
+            f"""
+            <div style="background: #080B11; border: 1.5px solid #1E293B; border-radius: 14px; padding: 18px; height: 100%;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <span style="background: #1E3A8A; color: #BFDBFE; font-size: 0.72rem; font-weight: 800; padding: 3px 10px; border-radius: 6px;">FEDERAL (NBF)</span>
+                    <span style="font-size: 0.8rem; color: #94A3B8;">National Book Foundation</span>
+                </div>
+                <div style="font-size: 0.92rem; color: #CBD5E1; line-height: 1.6;">
+                    {analysis.get('federal_synthesis', 'Grounded in Federal Board National Curriculum standards.')}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        f"""
+        <div style="margin-top: 16px; padding: 14px 18px; background: #131B2E; border-radius: 12px; border: 1px solid #334155; font-size: 0.9rem; color: #CBD5E1; line-height: 1.5;">
+            <b style="color: #818CF8;">Key Synthesis Takeaway:</b> {analysis.get('synthesis_takeaway', '')}
+        </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Past Paper Evidence & Syllabus Check
+    c_pp, c_syl = st.columns([1.6, 1])
+    with c_pp:
+        past_papers_ev = analysis.get("past_paper_evidence", [])
+        pp_html = ""
+        for pp in past_papers_ev:
+            yr = pp.get("year", "Historical")
+            ex = pp.get("exam", "MDCAT")
+            sum_text = pp.get("summary", "")
+            pp_html += f"""
+            <div style="background: #080B11; border-left: 3px solid #6366F1; border-radius: 0 8px 8px 0; padding: 10px 14px; margin-bottom: 10px;">
+                <div style="font-size: 0.78rem; font-weight: 800; color: #818CF8;">{ex} {yr} PAST PAPER</div>
+                <div style="font-size: 0.88rem; color: #E2E8F0; margin-top: 4px; line-height: 1.4;">{sum_text}</div>
+            </div>
+            """
+
+        st.markdown(
+            f"""
+            <div class="fintech-card">
+                <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
+                    HISTORICAL EXAM EVIDENCE
+                </span>
+                <h3 style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 14px 0;">
+                    Verified Past Paper Occurrences
+                </h3>
+                {pp_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c_syl:
+        syl_status = analysis.get("syllabus_status", "Covered")
+        syl_details = analysis.get("syllabus_details", "Directly outlined in official PMDC curriculum specifications.")
+        st.markdown(
+            f"""
+            <div class="fintech-card">
+                <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
+                    SYLLABUS ALIGNMENT
+                </span>
+                <div style="margin: 12px 0;">
+                    <span class="badge-verified" style="font-size: 0.9rem; padding: 6px 14px;">
+                        ✓ {syl_status}
+                    </span>
+                </div>
+                <div style="font-size: 0.85rem; color: #CBD5E1; line-height: 1.5;">
+                    {syl_details}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 # ─── PAGE 3: QUICK DIAGRAM ───────────────────────────────────────────────────
 elif st.session_state.page == "diagram":
     analysis = st.session_state.analysis
-    if not analysis:
-        st.info("No concept diagram available. Please analyze a question first.")
+    if not analysis or "diagram" not in analysis:
+        st.info("No active diagram available. Please run an analysis first.")
         if st.button("Go to Analyze", type="primary"):
             navigate_to("analyze")
         st.stop()
 
-    concept_title = analysis.get("concept_title", "Concept")
-    diag = analysis.get("diagram", {})
-    quick_recall = analysis.get("quick_recall", [])
-
     st.markdown(
-        f"""
-        <div style="margin-bottom: 22px;">
-            <div class="hero-tag">Active Recall • 60-Second Mastery</div>
+        """
+        <div style="margin-bottom: 20px;">
+            <div class="hero-tag">COGNITIVE RETENTION • INFOGRAPHIC</div>
             <h1 style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; margin: 0;">Quick Memorize Diagram</h1>
             <p style="font-size: 0.95rem; color: #94A3B8; margin-top: 4px;">
-                Visual relationship model for <b>{concept_title}</b>.
+                Visualizing cause-and-effect relationships allows instant mental recall during high-pressure medical entrance exams.
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    col_graph, col_recall = st.columns([1.8, 1.2])
+    # Render interactive concept flowchart
+    diagram_html = render_concept_diagram_html(analysis["diagram"])
+    st.markdown(diagram_html, unsafe_allow_html=True)
 
-    with col_graph:
-        st.markdown(
-            """
-            <div class="fintech-card" style="margin-bottom: 16px;">
-                <div style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px;">
-                    CONCEPT INTERACTION MAP
-                </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        svg_diagram = render_concept_diagram_html(
-            title=diag.get("title", f"{concept_title} Cascade"),
-            nodes=diag.get("nodes", []),
-            connections=diag.get("connections", []),
-        )
-        st.markdown(svg_diagram, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with col_recall:
+    # Quick Recall Points
+    quick_recall = analysis.get("quick_recall", [])
+    if quick_recall:
         recall_cards = ""
-        for idx, item in enumerate(quick_recall):
+        for pt in quick_recall:
             recall_cards += f"""
-            <div style="background: #080B11; border: 1px solid #1E293B; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;">
-                <div style="font-size: 0.72rem; font-weight: 800; color: #818CF8; letter-spacing: 0.06em;">POCKET RULE {idx+1}</div>
-                <div style="font-size: 0.92rem; font-weight: 600; color: #F8FAFC; margin-top: 4px; line-height: 1.4;">{item}</div>
+            <div style="background: #080B11; border: 1px solid #1E293B; border-radius: 14px; padding: 14px 18px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px;">
+                <span style="color: #818CF8; font-size: 1.2rem; font-weight: 800;">✓</span>
+                <span style="font-size: 0.95rem; color: #FFFFFF; font-weight: 600;">{pt}</span>
             </div>
             """
 
         st.markdown(
             f"""
             <div class="fintech-card">
-                <div style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px;">
-                    60-SECOND QUICK RECALL
-                </div>
-                <h3 style="font-size: 1.15rem; font-weight: 800; color: #FFFFFF; margin-bottom: 14px;">
-                    {diag.get('memory_hook', 'Core Concept Rule')}
+                <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
+                    RAPID EXAM RETRIEVAL CUES
+                </span>
+                <h3 style="font-size: 1.25rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 16px 0;">
+                    Key Recall Anchors
                 </h3>
                 {recall_cards}
             </div>
@@ -651,6 +637,7 @@ elif st.session_state.page == "diagram":
             unsafe_allow_html=True,
         )
 
+    # Actions
     c_diag1, c_diag2 = st.columns(2)
     with c_diag1:
         if st.button("← Return to Concept Intelligence", use_container_width=True):
@@ -660,228 +647,199 @@ elif st.session_state.page == "diagram":
             navigate_to("quiz")
 
 
-# ─── PAGE 4: 10-MCQ QUIZ ─────────────────────────────────────────────────────
+# ─── PAGE 4: 10-MCQ QUIZ ──────────────────────────────────────────────────────
 elif st.session_state.page == "quiz":
     questions = st.session_state.quiz_questions
     if not questions:
-        st.info("No quiz generated yet. Run an analysis to generate a personalized 10-MCQ Concept Check.")
+        st.info("No active quiz generated. Please run an analysis first.")
         if st.button("Go to Analyze", type="primary"):
             navigate_to("analyze")
         st.stop()
 
-    if st.session_state.quiz_submitted and st.session_state.quiz_result:
-        result = st.session_state.quiz_result
+    analysis = st.session_state.analysis or {}
+    concept_title = analysis.get("concept_title", st.session_state.query or "Concept Check")
 
+    # Header and Live Countdown Timer
+    c_head, c_timer = st.columns([2.2, 1])
+    with c_head:
         st.markdown(
-            """
-            <div style="margin-bottom: 20px;">
-                <div class="hero-tag">CONCEPT MASTERY SCORECARD</div>
-                <h1 style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; margin: 0;">Evaluation Results</h1>
+            f"""
+            <div>
+                <div class="hero-tag">10-MINUTE VERIFICATION CHECK</div>
+                <h1 style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; margin: 0;">10-MCQ Mastery Assessment</h1>
+                <p style="font-size: 0.92rem; color: #94A3B8; margin-top: 4px;">
+                    Topic: <b style="color: #FFFFFF;">{concept_title}</b> ({st.session_state.subject})
+                </p>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        col_score, col_feedback = st.columns([1, 2])
+    with c_timer:
+        remaining_sec, timer_str, is_expired = get_quiz_timer_state(total_seconds=600)
+        timer_color = "#EF4444" if remaining_sec < 120 else "#818CF8"
+        st.markdown(
+            f"""
+            <div class="fintech-card" style="padding: 14px 20px; text-align: center; margin-bottom: 0;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">TIME REMAINING</div>
+                <div style="font-size: 2.2rem; font-weight: 800; color: {timer_color}; font-family: monospace; line-height: 1.1; margin-top: 4px;">{timer_str}</div>
+                <div style="font-size: 0.72rem; color: #64748B;">Strict Exam Simulation (10 Mins)</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        with col_score:
-            score_ring = render_fintech_score_ring(result["score"], result["total"])
+    # Post-submission Results Card
+    if st.session_state.quiz_submitted and st.session_state.quiz_result:
+        res = st.session_state.quiz_result
+        score = res["score"]
+        total = res["total"]
+        pct = res["percentage"]
+        band = res["mastery_band"]
+
+        st.markdown("---")
+        c_score_ring, c_score_desc = st.columns([1, 2])
+        with c_score_ring:
+            ring_html = render_fintech_score_ring(score, total, f"{band}")
+            st.markdown(f"<div class='fintech-card'>{ring_html}</div>", unsafe_allow_html=True)
+
+        with c_score_desc:
             st.markdown(
                 f"""
-<div class="fintech-card" style="text-align: center;">
-    {score_ring}
-    <div style="margin-top: 10px;">
-        <span style="background: {result['color_theme']}1A; color: {result['color_theme']}; font-weight: 800; padding: 4px 12px; border-radius: 9999px; font-size: 0.8rem; border: 1px solid {result['color_theme']}33;">
-            {result['mastery_label']}
-        </span>
-    </div>
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-
-        with col_feedback:
-            st.markdown(
-                f"""
-<div class="fintech-card">
-    <span style="font-size: 0.75rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
-        RECOMMENDED STUDY ACTION
-    </span>
-    <h3 style="font-size: 1.3rem; font-weight: 800; color: #FFFFFF; margin: 4px 0 8px 0;">
-        {result['mastery_label']}
-    </h3>
-    <p style="font-size: 1.02rem; color: #CBD5E1; line-height: 1.6;">
-        {result['action_message']}
-    </p>
-    <div style="margin-top: 16px; padding: 12px 16px; background: #080B11; border: 1px solid #1E293B; border-radius: 12px; font-size: 0.88rem; color: #94A3B8;">
-        Your performance score has been calibrated into your <b>Evidence Study Priority</b>.
-    </div>
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("<h3 style='font-size: 1.35rem; font-weight: 800; color: #FFFFFF; margin: 24px 0 16px 0;'>Detailed Question Breakdown</h3>", unsafe_allow_html=True)
-
-        for item in result["detailed_results"]:
-            q_id = item["id"]
-            is_correct = item["is_correct"]
-            status_symbol = "✓ Correct" if is_correct else "✕ Incorrect"
-            status_color = "#4ADE80" if is_correct else "#F87171"
-            border_color = "rgba(74, 222, 128, 0.4)" if is_correct else "rgba(248, 113, 113, 0.4)"
-            bg_color = "rgba(74, 222, 128, 0.12)" if is_correct else "rgba(248, 113, 113, 0.12)"
-
-            st.markdown(
-                f"""
-                <div class="fintech-card" style="border-left: 5px solid {status_color}; margin-bottom: 16px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-weight: 800; font-size: 0.85rem; color: #94A3B8;">QUESTION {q_id} • {item['type']}</span>
-                        <span style="background: {bg_color}; color: {status_color}; font-weight: 800; font-size: 0.78rem; padding: 3px 10px; border-radius: 9999px; border: 1px solid {border_color};">
-                            {status_symbol}
-                        </span>
-                    </div>
-                    <div style="font-size: 1.05rem; font-weight: 700; color: #FFFFFF; margin-bottom: 12px;">
-                        {item['question']}
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
-                        <div style="padding: 8px 12px; background: #080B11; border: 1px solid #1E293B; border-radius: 8px; font-size: 0.88rem;">
-                            <span style="color: #94A3B8; font-weight: 600;">Your choice:</span>
-                            <b style="color: {'#4ADE80' if is_correct else '#F87171'}; margin-left: 6px;">{item['user_answer']}</b>
-                        </div>
-                        <div style="padding: 8px 12px; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.25); border-radius: 8px; font-size: 0.88rem;">
-                            <span style="color: #4ADE80; font-weight: 600;">Correct answer:</span>
-                            <b style="color: #4ADE80; margin-left: 6px;">{item['correct_answer']}</b>
-                        </div>
-                    </div>
-                    <div style="background: #080B11; border: 1px solid #1E293B; border-radius: 10px; padding: 12px 14px; font-size: 0.9rem; color: #CBD5E1; line-height: 1.5; margin-bottom: 8px;">
-                        <b style="color: #818CF8;">Deep Concept:</b> {item['explanation']}
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: #94A3B8; padding-top: 6px;">
-                        <span>🧠 <b style="color: #CBD5E1;">Remember:</b> {item['memory']}</span>
-                        <span>📌 {item['past_paper']}</span>
+                <div class="fintech-card">
+                    <span class="badge-verified">{band.upper()} PERFORMANCE</span>
+                    <h2 style="font-size: 1.6rem; font-weight: 800; color: #FFFFFF; margin: 8px 0 12px 0;">
+                        {res.get('recommendation', 'Good Effort')}
+                    </h2>
+                    <p style="font-size: 0.95rem; color: #CBD5E1; line-height: 1.6;">
+                        You answered <b style="color: #FFFFFF;">{score} out of {total}</b> questions correctly ({pct}% Accuracy).
+                        Review your mistakes below with verified textbook explanations and core memory hooks.
+                    </p>
+                    <div style="display: flex; gap: 12px; margin-top: 16px;">
+                        <span style="font-size: 0.85rem; color: #94A3B8;">✓ Direct Questions: <b>3</b></span>
+                        <span style="font-size: 0.85rem; color: #94A3B8;">✓ Conceptual Questions: <b>4</b></span>
+                        <span style="font-size: 0.85rem; color: #94A3B8;">✓ Application Questions: <b>3</b></span>
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        col_retake, col_back = st.columns(2)
-        with col_retake:
-            if st.button("↺ Retake 10-MCQ Concept Check", use_container_width=True):
-                st.session_state.quiz_answers = {}
+    # 10 Questions Form
+    st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
+    with st.form("quiz_form"):
+        for q in questions:
+            q_id = q.id
+            saved_ans = st.session_state.quiz_answers.get(q_id, None)
+
+            # Badge for question type
+            type_color = "#3B82F6" if "Direct" in q.type else ("#8B5CF6" if "Conceptual" in q.type else "#10B981")
+            st.markdown(
+                f"""
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 0.78rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
+                        QUESTION {q_id} OF 10
+                    </span>
+                    <span style="background: #1E293B; color: {type_color}; font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; border: 1px solid {type_color}66;">
+                        {q.type}
+                    </span>
+                </div>
+                <div style="font-size: 1.05rem; font-weight: 700; color: #FFFFFF; line-height: 1.5; margin-bottom: 12px;">
+                    {q.question}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # Options
+            opt_idx = q.options.index(saved_ans) if saved_ans in q.options else None
+            user_choice = st.radio(
+                f"Select your answer for Q{q_id}",
+                options=q.options,
+                index=opt_idx,
+                key=f"q_radio_{q_id}",
+                label_visibility="collapsed",
+                disabled=st.session_state.quiz_submitted,
+            )
+            if user_choice:
+                st.session_state.quiz_answers[q_id] = user_choice
+
+            # Post-submission feedback
+            if st.session_state.quiz_submitted:
+                is_correct = (user_choice == q.answer)
+                if is_correct:
+                    st.markdown(
+                        f"""
+                        <div style="background: #064E3B; border: 1.5px solid #059669; border-radius: 12px; padding: 14px 18px; margin: 10px 0 24px 0;">
+                            <div style="color: #34D399; font-weight: 800; font-size: 0.95rem;">✓ Correct Answer</div>
+                            <div style="color: #D1FAE5; font-size: 0.88rem; margin-top: 4px; line-height: 1.5;">{q.explanation}</div>
+                            <div style="color: #A7F3D0; font-size: 0.82rem; font-weight: 700; margin-top: 8px;">🧠 Memory Rule: {q.memory}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f"""
+                        <div style="background: #450A0A; border: 1.5px solid #DC2626; border-radius: 12px; padding: 14px 18px; margin: 10px 0 24px 0;">
+                            <div style="color: #F87171; font-weight: 800; font-size: 0.95rem;">✗ Incorrect (Your choice: {user_choice or 'Unanswered'})</div>
+                            <div style="color: #FEE2E2; font-size: 0.9rem; margin-top: 4px; font-weight: 700;">Correct Answer: {q.answer}</div>
+                            <div style="color: #FECACA; font-size: 0.88rem; margin-top: 4px; line-height: 1.5;">{q.explanation}</div>
+                            <div style="color: #FCA5A5; font-size: 0.82rem; font-weight: 700; margin-top: 8px;">🧠 Memory Rule: {q.memory}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
+
+        col_sub1, col_sub2 = st.columns([2, 1])
+        with col_sub1:
+            submitted = st.form_submit_button(
+                "Submit Answers & View Diagnostic Scoring",
+                type="primary",
+                use_container_width=True,
+                disabled=st.session_state.quiz_submitted,
+            )
+
+    if submitted and not st.session_state.quiz_submitted:
+        result = grade_quiz_submission(questions, st.session_state.quiz_answers)
+        st.session_state.quiz_result = result
+        st.session_state.quiz_submitted = True
+        st.session_state.student_accuracy = result["percentage"]
+        st.rerun()
+
+    # Post-quiz Action Row
+    if st.session_state.quiz_submitted:
+        c_act1, c_act2, c_act3 = st.columns(3)
+        with c_act1:
+            if st.button("↺ Retake This Quiz", use_container_width=True):
                 st.session_state.quiz_submitted = False
+                st.session_state.quiz_answers = {}
                 st.session_state.quiz_result = None
                 reset_quiz_timer()
                 st.rerun()
-        with col_back:
-            if st.button("← Return to Concept Intelligence", type="primary", use_container_width=True):
-                navigate_to("concept")
-
-    else:
-        remaining_sec, timer_str, is_expired = get_quiz_timer_state(total_seconds=600)
-
-        col_hdr, col_timer = st.columns([3, 1])
-        with col_hdr:
-            st.markdown(
-                """
-                <div>
-                    <div class="hero-tag">MDCAT & NUMS • TIMED CONCEPT CHECK</div>
-                    <h1 style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; margin: 0;">10-MCQ Concept Check</h1>
-                    <p style="font-size: 0.95rem; color: #94A3B8; margin-top: 4px;">
-                        Test whether you understand the concept, not whether you memorized an old question.
-                    </p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with col_timer:
-            timer_color = "#F87171" if remaining_sec < 120 else "#818CF8"
-            st.markdown(
-                f"""
-                <div style="background: #0F172A; border: 2px solid {timer_color}; border-radius: 16px; padding: 12px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,0.5);">
-                    <div style="font-size: 0.72rem; font-weight: 800; color: #94A3B8; letter-spacing: 0.08em; text-transform: uppercase;">TIME REMAINING</div>
-                    <div style="font-size: 1.8rem; font-weight: 800; color: {timer_color}; font-variant-numeric: tabular-nums;">
-                        {timer_str}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        if is_expired:
-            st.warning("⏰ Time has expired for this 10-minute session! Please submit your responses.")
-
-        st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
-
-        answered_count = sum(1 for q in questions if q.id in st.session_state.quiz_answers)
-        st.progress(answered_count / len(questions))
-        st.caption(f"Progress: {answered_count} of {len(questions)} questions answered")
-
-        for q in questions:
-            selected_val = st.session_state.quiz_answers.get(q.id, None)
-            idx_in_options = None
-            if selected_val in q.options:
-                idx_in_options = q.options.index(selected_val)
-
-            st.markdown(
-                f"""
-                <div class="fintech-card" style="margin-bottom: 14px; padding-bottom: 12px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-size: 0.78rem; font-weight: 800; color: #818CF8; letter-spacing: 0.08em; text-transform: uppercase;">
-                            QUESTION {q.id} OF 10 • {q.type}
-                        </span>
-                        <span style="font-size: 0.75rem; color: #94A3B8; font-weight: 600;">MDCAT / NUMS Format</span>
-                    </div>
-                    <div style="font-size: 1.05rem; font-weight: 700; color: #FFFFFF; line-height: 1.5; margin-bottom: 12px;">
-                        {q.question}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            choice = st.radio(
-                f"Question {q.id} Choices",
-                options=q.options,
-                index=idx_in_options,
-                key=f"q_radio_{q.id}",
-                label_visibility="collapsed",
-            )
-
-            if choice:
-                st.session_state.quiz_answers[q.id] = choice
-
-        st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
-
-        if st.button("Submit Concept Check for Grading →", type="primary", use_container_width=True):
-            result = grade_quiz_submission(questions, st.session_state.quiz_answers)
-            st.session_state.quiz_result = result
-            st.session_state.quiz_submitted = True
-            st.session_state.student_accuracy = result["percentage"]
-
-            if st.session_state.analysis:
-                old_score = st.session_state.analysis.get("priority_score", 80)
-                calibrated = max(40, min(95, int(old_score * 0.7 + (100 - result["percentage"]) * 0.3)))
-                st.session_state.analysis["priority_score"] = calibrated
-                if calibrated >= 75:
-                    st.session_state.analysis["priority_label"] = "STUDY NOW"
-                elif calibrated >= 50:
-                    st.session_state.analysis["priority_label"] = "REVIEW SOON"
-                else:
-                    st.session_state.analysis["priority_label"] = "LOWER PRIORITY"
-
-            st.rerun()
+        with c_act2:
+            if st.button("📖 View Book Evidence", use_container_width=True):
+                navigate_to("evidence")
+        with c_act3:
+            if st.button("✦ Analyze Another Topic", type="primary", use_container_width=True):
+                navigate_to("analyze")
 
 
-# ─── PAGE 5: BOOK EVIDENCE ───────────────────────────────────────────────────
+# ─── PAGE 5: BOOK EVIDENCE ────────────────────────────────────────────────────
 elif st.session_state.page == "evidence":
-    retrieved = st.session_state.retrieved_chunks
-    analysis = st.session_state.analysis
+    retrieved_chunks = st.session_state.retrieved_chunks
+    if not retrieved_chunks:
+        st.info("No book evidence loaded yet. Please run an analysis first.")
+        if st.button("Go to Analyze", type="primary"):
+            navigate_to("analyze")
+        st.stop()
 
     st.markdown(
-        """
-        <div style="margin-bottom: 22px;">
-            <div class="hero-tag">Verified Curriculum Traceability</div>
+        f"""
+        <div style="margin-bottom: 24px;">
+            <div class="hero-tag">AUTHORITATIVE SOURCE VERIFICATION</div>
             <h1 style="font-size: 2.1rem; font-weight: 800; color: #FFFFFF; margin: 0;">Authoritative Book Evidence</h1>
             <p style="font-size: 0.95rem; color: #94A3B8; margin-top: 4px;">
                 Direct text segments retrieved from your verified textbooks and past papers for this topic.
@@ -891,47 +849,29 @@ elif st.session_state.page == "evidence":
         unsafe_allow_html=True,
     )
 
-    if not retrieved:
-        st.info("No retrieved document evidence in active session. Please start on the Analyze page.")
-        if st.button("Go to Analyze", type="primary"):
-            navigate_to("analyze")
-        st.stop()
+    st.markdown(f"Found <b style='color: #818CF8;'>{len(retrieved_chunks)} verified chunks</b> in curriculum knowledge base:")
 
-    st.markdown(f"<div style='font-size: 0.9rem; color: #CBD5E1; margin-bottom: 16px;'>Found <b>{len(retrieved)} verified chunks</b> in curriculum knowledge base:</div>", unsafe_allow_html=True)
-
-    for i, chunk in enumerate(retrieved):
-        badge_style = "background: rgba(129, 140, 248, 0.15); color: #818CF8; border: 1px solid rgba(129, 140, 248, 0.3);"
-        if chunk.source_type == "Punjab Book":
-            badge_style = "background: rgba(34, 197, 94, 0.15); color: #4ADE80; border: 1px solid rgba(34, 197, 94, 0.3);"
-        elif chunk.source_type == "Federal Book":
-            badge_style = "background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3);"
-        elif chunk.source_type == "Past Paper":
-            badge_style = "background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3);"
-
-        page_info = f"Page {chunk.page}" if chunk.page and chunk.page != "unknown" else "Page N/A"
-
+    for idx, chunk in enumerate(retrieved_chunks):
         st.markdown(
             f"""
-            <div class="fintech-card" style="margin-bottom: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div class="fintech-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="{badge_style} font-weight: 800; font-size: 0.75rem; padding: 2px 10px; border-radius: 9999px;">
-                            {chunk.source_type.upper()}
-                        </span>
-                        <span style="font-weight: 700; color: #F8FAFC; font-size: 0.95rem;">{chunk.title}</span>
+                        <span class="badge-exam">{chunk.source_type.upper()}</span>
+                        <b style="color: #FFFFFF; font-size: 1.05rem;">{chunk.title}</b>
                     </div>
-                    <span style="font-size: 0.8rem; color: #94A3B8; font-weight: 600;">{page_info}</span>
+                    <span style="font-size: 0.8rem; color: #94A3B8;">Page {chunk.page}</span>
                 </div>
-                <div style="font-size: 0.8rem; color: #818CF8; font-family: monospace; margin-bottom: 10px;">
+                <div style="font-size: 0.78rem; font-family: monospace; color: #818CF8; margin-bottom: 12px;">
                     Source ID: {chunk.id}
                 </div>
-                <div style="background: #080B11; border: 1px solid #1E293B; border-radius: 10px; padding: 14px; font-size: 0.92rem; color: #CBD5E1; line-height: 1.6; white-space: pre-wrap;">
-{chunk.text}
+                <div class="source-excerpt">
+                    {chunk.text.replace(chr(10), '<br>')}
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    if st.button("← Return to Concept Intelligence", use_container_width=True):
+    if st.button("← Return to Concept Intelligence", type="primary"):
         navigate_to("concept")
