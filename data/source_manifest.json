@@ -1,0 +1,38 @@
+[
+  {
+    "file": "Punjab_Biology_Enzymes_Ch11.pdf",
+    "source_type": "Punjab Book",
+    "subject": "Biology",
+    "exam": [
+      "MDCAT",
+      "NUMS"
+    ],
+    "chapter": "Chapter 11: Enzymes",
+    "edition": "Punjab Curriculum and Textbook Board (PTB) 2023-24",
+    "authorized": true
+  },
+  {
+    "file": "Federal_Biology_Enzymes_Ch3.pdf",
+    "source_type": "Federal Book",
+    "subject": "Biology",
+    "exam": [
+      "MDCAT",
+      "NUMS"
+    ],
+    "chapter": "Chapter 3: Enzymes and Bioenergetics",
+    "edition": "National Book Foundation (Federal Board) 2023-24",
+    "authorized": true
+  },
+  {
+    "file": "PMDC_MDCAT_NUMS_Syllabus_Biology.pdf",
+    "source_type": "Syllabus",
+    "subject": "Biology",
+    "exam": [
+      "MDCAT",
+      "NUMS"
+    ],
+    "chapter": "Section 2: Biological Molecules & Enzymes",
+    "edition": "PMDC Official MDCAT & NUMS Curriculum 2024",
+    "authorized": true
+  }
+]
