@@ -1,0 +1,40 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Streamlit secrets and runtime data
+.streamlit/secrets.toml
+.streamlit/credentials.toml
+
+# Environment & API keys
+.env
+*.key
+*.pem
+service-account*.json
+
+# Cache & Vector Store runtime indices
+*.index
+*.faiss
+*.pkl
+cache/
+.cache/
+
+# Local source downloads & runtime PDF caches
+data/sources/*.download
+downloads/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS specific
+.DS_Store
+Thumbs.db
