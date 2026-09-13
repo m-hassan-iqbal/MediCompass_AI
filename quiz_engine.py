@@ -999,6 +999,8 @@ def grade_quiz_submission(
         "total": len(questions),
         "percentage": round((correct_count / len(questions)) * 100, 1),
         "mastery_label": mastery_label,
+        "mastery_band": mastery_label,
+        "band": mastery_label,
         "action_message": action_message,
         "color_theme": color_theme,
         "detailed_results": detailed_results,
