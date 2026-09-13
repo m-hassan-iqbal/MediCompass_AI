@@ -77,13 +77,11 @@ def validate_quiz_data(data: dict[str, Any]) -> tuple[bool, list[str], list[Quiz
             if len(set(cleaned_options)) != 4:
                 errors.append(f"Question {qid} contains duplicate options.")
 
-            # Check that answer matches one option
             matched_option = None
             for opt in cleaned_options:
                 if answer == opt or (len(answer) == 1 and answer.upper() in ["A", "B", "C", "D"]):
                     matched_option = opt
                     break
-                # Handle cases where answer might have prefix like "A) ..."
                 if opt.lower().startswith(answer.lower()) or answer.lower().startswith(opt.lower()):
                     matched_option = opt
                     break
@@ -175,7 +173,6 @@ class QuizGenerator:
                 return questions
 
             logger.warning(f"Quiz validation failed with errors: {errors}. Retrying with repair.")
-            # Retry once with repair prompt
             repair_prompt = prompts.JSON_REPAIR_PROMPT.format(
                 error="; ".join(errors),
                 raw_output=raw_content[:2000],
@@ -192,7 +189,6 @@ class QuizGenerator:
             if is_valid2:
                 return questions2
 
-            logger.warning("Repaired quiz still failed validation. Using verified grounded seed quiz.")
             return self._generate_verified_demo_quiz()
 
         except Exception as e:
@@ -204,8 +200,7 @@ class QuizGenerator:
         High-quality verified 10-MCQ set based on Punjab & Federal Textbook enzyme inhibition concepts.
         Strictly follows: 3 Direct Understanding, 4 Conceptual Reasoning, 3 Application / Interpretation.
         """
-        questions = [
-            # 1. Direct Understanding
+        return [
             QuizQuestion(
                 id=1,
                 type="Direct Understanding",
@@ -222,7 +217,6 @@ class QuizGenerator:
                 memory="Competitive = Competes for the Active Site",
                 past_paper="MDCAT 2021 Concept Variation"
             ),
-            # 2. Direct Understanding
             QuizQuestion(
                 id=2,
                 type="Direct Understanding",
@@ -239,7 +233,6 @@ class QuizGenerator:
                 memory="Vmax stays CONSTANT in competitive inhibition",
                 past_paper="MDCAT 2023 Concept Variation"
             ),
-            # 3. Direct Understanding
             QuizQuestion(
                 id=3,
                 type="Direct Understanding",
@@ -256,7 +249,6 @@ class QuizGenerator:
                 memory="Km UP = Affinity DOWN",
                 past_paper="NUMS 2024 Concept Variation"
             ),
-            # 4. Conceptual Reasoning
             QuizQuestion(
                 id=4,
                 type="Conceptual Reasoning",
@@ -273,7 +265,6 @@ class QuizGenerator:
                 memory="Excess substrate outcompetes the inhibitor",
                 past_paper="MDCAT 2023 Concept Variation"
             ),
-            # 5. Conceptual Reasoning
             QuizQuestion(
                 id=5,
                 type="Conceptual Reasoning",
@@ -290,7 +281,6 @@ class QuizGenerator:
                 memory="Allosteric site binding cannot be outcompeted by substrate",
                 past_paper="NUMS 2024 Concept Variation"
             ),
-            # 6. Conceptual Reasoning
             QuizQuestion(
                 id=6,
                 type="Conceptual Reasoning",
@@ -307,7 +297,6 @@ class QuizGenerator:
                 memory="Malonate vs Succinate = Classic Competitive Pair",
                 past_paper="Punjab Textbook Core Yield"
             ),
-            # 7. Conceptual Reasoning
             QuizQuestion(
                 id=7,
                 type="Conceptual Reasoning",
@@ -324,7 +313,6 @@ class QuizGenerator:
                 memory="Y-intercept identical = Vmax unchanged",
                 past_paper="NUMS High-Yield Concept"
             ),
-            # 8. Application / Interpretation
             QuizQuestion(
                 id=8,
                 type="Application / Interpretation",
@@ -341,7 +329,6 @@ class QuizGenerator:
                 memory="Sulfa drugs starve bacteria of folic acid without affecting human cells",
                 past_paper="Federal Textbook Pharmacology Section"
             ),
-            # 9. Application / Interpretation
             QuizQuestion(
                 id=9,
                 type="Application / Interpretation",
@@ -358,7 +345,6 @@ class QuizGenerator:
                 memory="Vmax DOWN + Km SAME = Non-Competitive",
                 past_paper="MDCAT 2021 Concept Variation"
             ),
-            # 10. Application / Interpretation
             QuizQuestion(
                 id=10,
                 type="Application / Interpretation",
@@ -376,16 +362,12 @@ class QuizGenerator:
                 past_paper="Clinical Application Scenario"
             ),
         ]
-        return questions
 
 
 def grade_quiz_submission(
     questions: list[QuizQuestion], user_answers: dict[int, str]
 ) -> dict[str, Any]:
-    """
-    Computes total score out of 10, categorizes mastery band,
-    and returns detailed per-question performance breakdowns.
-    """
+    """Computes total score out of 10 and categorizes mastery band."""
     correct_count = 0
     detailed_results = []
 
@@ -410,7 +392,6 @@ def grade_quiz_submission(
             }
         )
 
-    # Mastery categorization as required by PRD Section 49
     if correct_count >= 8:
         mastery_label = "Strong concept control"
         action_message = "Review the missed questions and keep the core rule active."
