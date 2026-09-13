@@ -10,16 +10,35 @@ import streamlit as st
 
 CUSTOM_CSS = """
 <style>
-/* Modern Fintech Intelligence Theme */
+/* Modern Fintech Intelligence Theme - High Contrast Enforcement */
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+:root {
+    --text-color: #172033 !important;
+    --background-color: #F7F9FD !important;
+    --secondary-background-color: #FFFFFF !important;
+    --primary-color: #5368E9 !important;
+}
+
+/* Force light background and dark text on the entire app container */
+html, body, [data-testid="stAppViewContainer"], .stApp {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    background-color: #F7F9FD !important;
+    color: #172033 !important;
+}
+
+/* Override Streamlit Dark Mode text inheritance */
+[data-testid="stAppViewContainer"] *,
+[data-testid="stSidebar"] *,
+[data-testid="stMarkdownContainer"] *,
+.stMarkdown, .stText, p, span, div, label, li, h1, h2, h3, h4, h5, h6 {
     color: #172033;
 }
 
-.stApp {
-    background-color: #F7F9FD;
+/* Force headings to crisp dark navy */
+h1, h2, h3, h4, h5, h6, .hero-title {
+    color: #0F172A !important;
+    font-weight: 800 !important;
 }
 
 /* Hide Streamlit default hamburger & footer */
@@ -29,158 +48,218 @@ header {visibility: hidden;}
 
 /* Container padding */
 .block-container {
-    padding-top: 2rem;
-    padding-bottom: 3rem;
+    padding-top: 1.5rem !important;
+    padding-bottom: 3rem !important;
     max-width: 1140px;
 }
 
-/* Sidebar styling */
+/* Sidebar styling - crisp white with dark border */
 [data-testid="stSidebar"] {
-    background-color: #FFFFFF;
-    border-right: 1px solid #E2E8F0;
+    background-color: #FFFFFF !important;
+    border-right: 1.5px solid #E2E8F0 !important;
+}
+[data-testid="stSidebar"] p, 
+[data-testid="stSidebar"] span, 
+[data-testid="stSidebar"] div,
+[data-testid="stSidebar"] label {
+    color: #172033 !important;
+}
+
+/* Section titles in sidebar */
+.sidebar-section-title {
+    font-size: 0.78rem !important;
+    font-weight: 800 !important;
+    color: #334155 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+    margin-bottom: 8px !important;
 }
 
 /* Fintech card styles */
 .fintech-card {
-    background: #FFFFFF;
-    border: 1px solid #EDF2F7;
-    border-radius: 20px;
-    padding: 24px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 20px -2px rgba(23, 32, 51, 0.04);
+    background: #FFFFFF !important;
+    border: 1.5px solid #E2E8F0 !important;
+    border-radius: 20px !important;
+    padding: 24px !important;
+    margin-bottom: 20px !important;
+    box-shadow: 0 4px 20px -2px rgba(23, 32, 51, 0.06) !important;
     transition: all 0.2s ease-in-out;
 }
 .fintech-card:hover {
-    box-shadow: 0 8px 30px -4px rgba(23, 32, 51, 0.08);
+    box-shadow: 0 8px 30px -4px rgba(23, 32, 51, 0.1) !important;
+    border-color: #CBD5E1 !important;
+}
+.fintech-card * {
+    color: #172033;
 }
 
-/* Pills & Badges */
+/* Pills & Badges with high contrast */
 .badge-verified {
-    background-color: #EBF5FF;
-    color: #2563EB;
-    padding: 4px 12px;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    border: 1px solid #BFDBFE;
-    display: inline-flex;
-    align-items: center;
+    background-color: #EFF6FF !important;
+    color: #1D4ED8 !important;
+    padding: 5px 14px !important;
+    border-radius: 9999px !important;
+    font-size: 0.78rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.05em !important;
+    border: 1.5px solid #93C5FD !important;
+    display: inline-flex !important;
+    align-items: center !important;
 }
 
 .badge-inference {
-    background-color: #F5F3FF;
-    color: #7C3AED;
-    padding: 4px 12px;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    border: 1px solid #DDD6FE;
-    display: inline-flex;
-    align-items: center;
+    background-color: #F5F3FF !important;
+    color: #6D28D9 !important;
+    padding: 5px 14px !important;
+    border-radius: 9999px !important;
+    font-size: 0.78rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.05em !important;
+    border: 1.5px solid #C4B5FD !important;
+    display: inline-flex !important;
+    align-items: center !important;
 }
 
 .badge-exam {
-    background-color: #EFF6FF;
-    color: #1D4ED8;
-    padding: 4px 10px;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    margin-right: 6px;
-}
-
-.badge-priority-high {
-    background-color: #FEF2F2;
-    color: #DC2626;
-    border: 1px solid #FCA5A5;
-    padding: 4px 12px;
-    border-radius: 9999px;
-    font-weight: 800;
-    font-size: 0.85rem;
-}
-
-.badge-priority-med {
-    background-color: #FFFBEB;
-    color: #D97706;
-    border: 1px solid #FCD34D;
-    padding: 4px 12px;
-    border-radius: 9999px;
-    font-weight: 800;
-    font-size: 0.85rem;
+    background-color: #EEF2FF !important;
+    color: #3730A3 !important;
+    padding: 5px 12px !important;
+    border-radius: 8px !important;
+    font-size: 0.82rem !important;
+    font-weight: 700 !important;
+    border: 1px solid #C7D2FE !important;
+    margin-right: 6px !important;
 }
 
 /* Hero Section */
 .hero-tag {
-    color: #5368E9;
-    font-size: 0.85rem;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 8px;
+    color: #4338CA !important;
+    font-size: 0.88rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    margin-bottom: 8px !important;
 }
 
 .hero-title {
-    font-size: 2.25rem;
-    font-weight: 800;
-    color: #172033;
-    line-height: 1.25;
-    margin-bottom: 12px;
+    font-size: 2.3rem !important;
+    font-weight: 800 !important;
+    color: #0F172A !important;
+    line-height: 1.25 !important;
+    margin-bottom: 12px !important;
 }
 
 .hero-sub {
-    font-size: 1.05rem;
-    color: #4A5568;
-    line-height: 1.6;
-    margin-bottom: 24px;
+    font-size: 1.08rem !important;
+    color: #334155 !important;
+    line-height: 1.6 !important;
+    margin-bottom: 24px !important;
+    font-weight: 500 !important;
 }
 
 /* Excerpt quote block */
 .source-excerpt {
-    background-color: #F8FAFC;
-    border-left: 4px solid #5368E9;
-    padding: 14px 18px;
-    border-radius: 0 12px 12px 0;
-    font-size: 0.92rem;
-    color: #334155;
-    font-style: italic;
-    line-height: 1.6;
-    margin: 12px 0;
+    background-color: #F8FAFC !important;
+    border-left: 4px solid #5368E9 !important;
+    padding: 14px 18px !important;
+    border-radius: 0 12px 12px 0 !important;
+    font-size: 0.94rem !important;
+    color: #1E293B !important;
+    font-style: italic !important;
+    line-height: 1.6 !important;
+    margin: 12px 0 !important;
+    border-top: 1px solid #F1F5F9 !important;
+    border-right: 1px solid #F1F5F9 !important;
+    border-bottom: 1px solid #F1F5F9 !important;
 }
 
 /* Memory hook highlight box */
 .memory-box {
-    background: linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%);
-    border: 1px solid #C7D2FE;
-    border-radius: 16px;
-    padding: 18px 22px;
-    margin: 16px 0;
+    background: #EEF2FF !important;
+    border: 1.5px solid #C7D2FE !important;
+    border-radius: 16px !important;
+    padding: 18px 22px !important;
+    margin: 16px 0 !important;
+}
+.memory-box * {
+    color: #1E1B4B !important;
 }
 
-/* Primary and secondary button improvements */
-div.stButton > button:first-child {
-    border-radius: 12px;
-    font-weight: 600;
-    padding: 10px 24px;
-    transition: all 0.2s;
+/* Form Input & Widget Labels */
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] label,
+[data-testid="stWidgetLabel"] span {
+    color: #0F172A !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
 }
 
-/* Radio button option cards */
+/* Text Area and Selectbox Contrast */
+.stTextArea textarea {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    border: 1.5px solid #CBD5E1 !important;
+    border-radius: 12px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+}
+.stTextArea textarea:focus {
+    border-color: #5368E9 !important;
+    box-shadow: 0 0 0 2px rgba(83, 104, 233, 0.2) !important;
+}
+
+div[data-baseweb="select"] {
+    background-color: #FFFFFF !important;
+    border: 1.5px solid #CBD5E1 !important;
+    border-radius: 12px !important;
+}
+div[data-baseweb="select"] * {
+    color: #0F172A !important;
+    font-weight: 600 !important;
+}
+
+/* Button contrast */
+div.stButton > button {
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    padding: 10px 24px !important;
+    transition: all 0.2s !important;
+}
+div.stButton > button[kind="primary"] {
+    background-color: #5368E9 !important;
+    color: #FFFFFF !important;
+    border: none !important;
+}
+div.stButton > button[kind="primary"] * {
+    color: #FFFFFF !important;
+}
+div.stButton > button[kind="secondary"] {
+    background-color: #FFFFFF !important;
+    color: #1E293B !important;
+    border: 1.5px solid #CBD5E1 !important;
+}
+div.stButton > button[kind="secondary"]:hover {
+    border-color: #5368E9 !important;
+    background-color: #F8FAFC !important;
+}
+
+/* Radio button options */
 div[role="radiogroup"] > label {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 12px;
-    padding: 12px 16px;
-    margin-bottom: 8px;
-    cursor: pointer;
-    transition: all 0.15s ease;
+    background: #FFFFFF !important;
+    border: 1.5px solid #E2E8F0 !important;
+    border-radius: 12px !important;
+    padding: 12px 16px !important;
+    margin-bottom: 8px !important;
+    cursor: pointer !important;
+}
+div[role="radiogroup"] > label * {
+    color: #1E293B !important;
+    font-weight: 600 !important;
 }
 div[role="radiogroup"] > label:hover {
-    border-color: #5368E9;
-    background: #F8FAFF;
+    border-color: #5368E9 !important;
+    background: #F8FAFF !important;
 }
-
 </style>
 """
 
@@ -191,25 +270,21 @@ def apply_custom_styles():
 
 
 def render_fintech_priority_ring(score: int, label: str) -> str:
-    """
-    Renders an SVG circular gauge ring for Evidence-Based Study Priority.
-    Score: 0 - 100.
-    """
     radius = 54
     circumference = 2 * 3.14159 * radius
     stroke_offset = circumference - (score / 100.0) * circumference
 
     if score >= 75:
-        color = "#DC2626"  # Red/Urgent Study Now
+        color = "#DC2626"
         bg_ring = "#FEE2E2"
     elif score >= 50:
-        color = "#F59E0B"  # Amber Review Soon
+        color = "#F59E0B"
         bg_ring = "#FEF3C7"
     else:
-        color = "#10B981"  # Green Lower Priority
+        color = "#10B981"
         bg_ring = "#D1FAE5"
 
-    svg = f"""
+    return f"""
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">
         <div style="position: relative; width: 140px; height: 140px;">
             <svg width="140" height="140" viewBox="0 0 140 140" style="transform: rotate(-90deg);">
@@ -232,29 +307,25 @@ def render_fintech_priority_ring(score: int, label: str) -> str:
         </div>
     </div>
     """
-    return svg
 
 
 def render_fintech_score_ring(score: int, total: int = 10, label: str = "Concept Score") -> str:
-    """
-    Renders an SVG circular gauge ring for Quiz Results (e.g. 7 / 10).
-    """
     pct = (score / float(total)) if total > 0 else 0
     radius = 54
     circumference = 2 * 3.14159 * radius
     stroke_offset = circumference - (pct * circumference)
 
     if score >= 8:
-        color = "#10B981"  # Emerald Green
+        color = "#10B981"
         bg_ring = "#D1FAE5"
     elif score >= 5:
-        color = "#F59E0B"  # Amber
+        color = "#F59E0B"
         bg_ring = "#FEF3C7"
     else:
-        color = "#EF4444"  # Red
+        color = "#EF4444"
         bg_ring = "#FEE2E2"
 
-    svg = f"""
+    return f"""
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px;">
         <div style="position: relative; width: 140px; height: 140px;">
             <svg width="140" height="140" viewBox="0 0 140 140" style="transform: rotate(-90deg);">
@@ -277,14 +348,9 @@ def render_fintech_score_ring(score: int, total: int = 10, label: str = "Concept
         </div>
     </div>
     """
-    return svg
 
 
 def render_concept_diagram_html(diagram_data: dict[str, Any]) -> str:
-    """
-    Renders a responsive, high-aesthetic educational flowchart/concept map
-    with white rounded cards, soft blue/purple accents, and clean directional links.
-    """
     nodes = diagram_data.get("nodes", [])
     title = diagram_data.get("title", "Concept Map")
     hook = diagram_data.get("memory_hook", "")
@@ -301,7 +367,6 @@ def render_concept_diagram_html(diagram_data: dict[str, Any]) -> str:
         """
         cards_html.append(card_content)
 
-        # Insert connecting arrow between cards
         if i < len(nodes) - 1:
             edge_label = ""
             if i < len(connections):
@@ -345,10 +410,6 @@ def render_concept_diagram_html(diagram_data: dict[str, Any]) -> str:
 
 
 def get_quiz_timer_state(total_seconds: int = 600) -> tuple[int, str, bool]:
-    """
-    Manages a 10-minute (600s) countdown timer using session state timestamps.
-    Returns: (seconds_remaining, formatted_time_string, is_expired)
-    """
     if "quiz_started_at" not in st.session_state or st.session_state.quiz_started_at is None:
         st.session_state.quiz_started_at = time.time()
 
@@ -364,12 +425,10 @@ def get_quiz_timer_state(total_seconds: int = 600) -> tuple[int, str, bool]:
 
 
 def reset_quiz_timer():
-    """Resets the quiz timer state."""
     st.session_state.quiz_started_at = time.time()
 
 
 def init_session_state():
-    """Initializes persistent application session state variables."""
     defaults = {
         "page": "analyze",
         "subject": "Biology",
@@ -390,6 +449,5 @@ def init_session_state():
 
 
 def navigate_to(page_name: str):
-    """Safely transitions between pages without losing analysis state."""
     st.session_state.page = page_name
     st.rerun()
