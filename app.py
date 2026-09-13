@@ -42,7 +42,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Apply solid black fintech styling
+# Apply solid black OLED fintech styling
 apply_custom_styles()
 
 # Initialize session state variables
@@ -373,7 +373,7 @@ if st.session_state.page == "analyze":
             for step_idx, stage_text in enumerate(status_stages):
                 progress_placeholder.markdown(
                     f"""
-                    <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 12px; padding: 14px 18px; margin: 12px 0;">
+                    <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 12px; padding: 14px 18px; margin-line: 12px 0;">
                         <div style="font-size: 0.85rem; font-weight: 700; color: #818CF8;">STAGE {step_idx + 1} OF 4</div>
                         <div style="font-size: 0.95rem; font-weight: 600; color: #F8FAFC; margin-top: 2px;">{stage_text}</div>
                     </div>
