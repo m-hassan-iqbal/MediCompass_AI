@@ -19,7 +19,6 @@ import prompts
 
 logger = logging.getLogger(__name__)
 
-# Lightweight embeddings loader with fallback support
 _EMBEDDING_MODEL = None
 
 
@@ -29,7 +28,6 @@ def get_embedding_model():
     if _EMBEDDING_MODEL is None:
         try:
             from sentence_transformers import SentenceTransformer
-            # Small, fast, highly effective 384-dim embedding model
             _EMBEDDING_MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
             logger.info("Loaded sentence-transformers/all-MiniLM-L6-v2 successfully.")
         except Exception as e:
@@ -63,7 +61,6 @@ class FallbackBOWVectorizer:
                 if tok in self.vocab:
                     matrix[i, self.vocab[tok]] += 1.0
 
-        # L2 normalize
         norms = np.linalg.norm(matrix, axis=1, keepdims=True)
         norms[norms == 0] = 1.0
         return matrix / norms
@@ -111,7 +108,6 @@ class LocalVectorStore:
             self.bow_vectorizer = FallbackBOWVectorizer()
             self.embeddings = self.bow_vectorizer.fit_transform(texts)
         else:
-            # sentence-transformers embedding
             emb = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
             self.embeddings = emb.astype(np.float32)
 
@@ -163,10 +159,7 @@ class LocalVectorStore:
         top_k: int = 6,
         min_similarity: float = 0.05,
     ) -> list[DocumentChunk]:
-        """
-        Retrieves top relevant chunks with source diversity (ensuring Punjab,
-        Federal, Syllabus, and Past Paper representations if available).
-        """
+        """Retrieves top relevant chunks with source diversity."""
         if not self.chunks or self.embeddings is None:
             return []
 
@@ -178,40 +171,26 @@ class LocalVectorStore:
         else:
             q_emb = model.encode([query], convert_to_numpy=True, normalize_embeddings=True).astype(np.float32)
 
-        # Cosine similarity (vectors are normalized so dot product = cosine similarity)
         scores = np.dot(self.embeddings, q_emb.T).flatten()
 
-        # Group and rank by source type to enforce source diversity
         scored_chunks = []
         for idx, (chunk, score) in enumerate(zip(self.chunks, scores)):
-            # Filter by subject if specified
             if subject and chunk.subject.lower() != subject.lower():
                 continue
-
-            # Exam matching (if exam is not 'MDCAT + NUMS', filter if chunk has explicit exams)
-            if exam != "MDCAT + NUMS" and chunk.exam:
-                exam_names = [e.upper() for e in chunk.exam]
-                if exam.upper() not in exam_names and "MDCAT" in exam_names and exam.upper() == "NUMS":
-                    # Soft filter: allow relevant shared medical concepts
-                    pass
 
             if score >= min_similarity:
                 scored_chunks.append((chunk, float(score)))
 
-        # Sort descending by score
         scored_chunks.sort(key=lambda x: x[1], reverse=True)
 
         if not scored_chunks:
-            # Fallback: take top 3 regardless of min_similarity if available
             scored_chunks = [(c, float(s)) for c, s in zip(self.chunks, scores)]
             scored_chunks.sort(key=lambda x: x[1], reverse=True)
 
-        # Source diversity reranking
         selected_chunks: list[DocumentChunk] = []
         seen_ids = set()
         source_types_target = ["Syllabus", "Punjab Book", "Federal Book", "Past Paper"]
 
-        # 1. Grab highest scoring chunk from each key source type
         for stype in source_types_target:
             for chunk, score in scored_chunks:
                 if chunk.source_type == stype and chunk.id not in seen_ids:
@@ -219,7 +198,6 @@ class LocalVectorStore:
                     seen_ids.add(chunk.id)
                     break
 
-        # 2. Fill remaining top_k budget with remaining best scoring chunks
         for chunk, score in scored_chunks:
             if chunk.id not in seen_ids and len(selected_chunks) < top_k:
                 selected_chunks.append(chunk)
@@ -248,13 +226,11 @@ def build_compact_context(chunks: list[DocumentChunk]) -> str:
 def clean_json_response(raw_response: str) -> str:
     """Strips markdown code blocks, backticks, and trailing characters from LLM response."""
     text = raw_response.strip()
-    # Remove markdown code fences ```json ... ``` or ``` ... ```
     if text.startswith("```"):
         text = re.sub(r"^```[a-zA-Z0-9_-]*\n", "", text)
         text = re.sub(r"\n```$", "", text)
         text = text.strip()
 
-    # Find the outermost json object { ... }
     first_brace = text.find("{")
     last_brace = text.rfind("}")
     if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
@@ -272,7 +248,6 @@ class GroqClient:
         self._client = None
 
     def get_client(self):
-        """Initializes Groq client if API key is present."""
         if self._client is None and self.api_key:
             try:
                 from groq import Groq
@@ -327,7 +302,6 @@ class GroqClient:
             return self._generate_verified_demo_analysis(query, subject, exam, retrieved_chunks)
 
     def _safe_parse_json(self, raw_str: str, client=None) -> dict[str, Any]:
-        """Attempts safe JSON parsing with one repair attempt if malformed."""
         cleaned = clean_json_response(raw_str)
         try:
             return json.loads(cleaned)
@@ -350,19 +324,15 @@ class GroqClient:
                 except Exception as e2:
                     logger.error(f"Repair attempt failed: {e2}")
 
-            # Return empty skeleton
             return {}
 
     def _validate_and_sanitize_analysis(
         self, analysis: dict[str, Any], retrieved_chunks: list[DocumentChunk]
     ) -> dict[str, Any]:
-        """Ensures all source_ids exist in retrieved chunks, and caps priority scores."""
         valid_ids = {c.id for c in retrieved_chunks}
         reported_ids = analysis.get("source_ids", [])
-        # Only keep IDs that were actually in retrieved set
         analysis["source_ids"] = [sid for sid in reported_ids if sid in valid_ids]
 
-        # Ensure priority score is bounded 0-100
         score = analysis.get("priority_score", 70)
         try:
             score = max(0, min(100, int(score)))
@@ -377,7 +347,6 @@ class GroqClient:
         else:
             analysis["priority_label"] = "LOWER PRIORITY"
 
-        # Sanitize past paper evidence (only keep verified ones)
         if "past_paper_evidence" in analysis:
             analysis["past_paper_evidence"] = [
                 item for item in analysis["past_paper_evidence"] if item.get("verified", False)
@@ -388,10 +357,6 @@ class GroqClient:
     def _generate_verified_demo_analysis(
         self, query: str, subject: str, exam: str, retrieved_chunks: list[DocumentChunk]
     ) -> dict[str, Any]:
-        """
-        High-fidelity, verified grounded intelligence for demonstration/fallback mode
-        based strictly on the seed Punjab, Federal, and PMDC syllabus evidence.
-        """
         valid_ids = [c.id for c in retrieved_chunks] if retrieved_chunks else [
             "Punjab_Biology_Enzymes_Ch11_p3_c0",
             "Federal_Biology_Enzymes_Ch3_p2_c0",
