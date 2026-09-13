@@ -60,8 +60,8 @@ def get_initialized_vector_store():
     fp = compute_kb_fingerprint(SOURCES_DIR, MANIFEST_PATH)
     vs = LocalVectorStore(cache_dir=CACHE_DIR)
 
-    # Try loading cached index first
-    if not vs.load_cached_index(fp):
+    # Try loading cached index first, self-heal if missing or empty
+    if not vs.load_cached_index(fp) or len(vs.chunks) == 0:
         chunks = build_knowledge_base_chunks(
             sources_dir=SOURCES_DIR,
             manifest_path=MANIFEST_PATH,
@@ -86,15 +86,15 @@ quiz_gen = QuizGenerator(api_key=groq_api_key, model=groq_model)
 with st.sidebar:
     st.markdown(
         """
-        <div style="padding: 12px 0 18px 0; border-bottom: 1px solid #F1F5F9; margin-bottom: 20px;">
+        <div style="padding: 12px 0 18px 0; border-bottom: 1.5px solid #E2E8F0; margin-bottom: 20px;">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 1.8rem; color: #5368E9;">✦</span>
                 <div>
-                    <h2 style="font-size: 1.35rem; font-weight: 800; color: #172033; margin: 0; line-height: 1.1;">MediCompass</h2>
-                    <span style="font-size: 0.72rem; font-weight: 700; color: #5368E9; letter-spacing: 0.08em; text-transform: uppercase;">AI • Exam Intelligence</span>
+                    <h2 style="font-size: 1.35rem; font-weight: 800; color: #0F172A; margin: 0; line-height: 1.1;">MediCompass</h2>
+                    <span style="font-size: 0.72rem; font-weight: 800; color: #4338CA; letter-spacing: 0.08em; text-transform: uppercase;">AI • Exam Intelligence</span>
                 </div>
             </div>
-            <div style="font-size: 0.78rem; color: #64748B; margin-top: 8px; line-height: 1.4;">
+            <div style="font-size: 0.8rem; color: #334155; margin-top: 8px; line-height: 1.4; font-weight: 500;">
                 Turning exam information into study intelligence.
             </div>
         </div>
@@ -103,7 +103,7 @@ with st.sidebar:
     )
 
     # Navigation buttons
-    st.markdown("<div style='font-size: 0.75rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;'>NAVIGATION</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 0.78rem; font-weight: 800; color: #1E293B; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;'>NAVIGATION</div>", unsafe_allow_html=True)
 
     pages = [
         ("⌂ Analyze", "analyze"),
@@ -126,17 +126,17 @@ with st.sidebar:
     st.markdown("---")
 
     # Current Target
-    st.markdown("<div style='font-size: 0.75rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;'>CURRENT TARGET</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 0.78rem; font-weight: 800; color: #1E293B; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;'>CURRENT TARGET</div>", unsafe_allow_html=True)
     st.markdown(
         f"""
-        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 14px;">
+        <div style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 12px; padding: 12px 14px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
             <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="font-size: 0.8rem; color: #64748B; font-weight: 600;">Subject</span>
-                <span style="font-size: 0.8rem; color: #172033; font-weight: 700;">{st.session_state.subject}</span>
+                <span style="font-size: 0.82rem; color: #334155; font-weight: 700;">Subject</span>
+                <span style="font-size: 0.85rem; color: #0F172A; font-weight: 800;">{st.session_state.subject}</span>
             </div>
             <div style="display: flex; justify-content: space-between;">
-                <span style="font-size: 0.8rem; color: #64748B; font-weight: 600;">Target Exam</span>
-                <span style="font-size: 0.8rem; color: #5368E9; font-weight: 700;">{st.session_state.exam}</span>
+                <span style="font-size: 0.82rem; color: #334155; font-weight: 700;">Target Exam</span>
+                <span style="font-size: 0.85rem; color: #4338CA; font-weight: 800;">{st.session_state.exam}</span>
             </div>
         </div>
         """,
@@ -149,13 +149,13 @@ with st.sidebar:
     chunk_count = len(vector_store.chunks)
     groq_ready = groq_client.is_configured()
 
-    st.markdown("<div style='font-size: 0.75rem; font-weight: 800; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;'>SYSTEM STATUS</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 0.78rem; font-weight: 800; color: #1E293B; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;'>SYSTEM STATUS</div>", unsafe_allow_html=True)
     st.markdown(
         f"""
-        <div style="font-size: 0.78rem; color: #475569; line-height: 1.6;">
-            <div>• Knowledge Chunks: <b>{chunk_count} verified</b></div>
-            <div>• Model: <b>{groq_model}</b></div>
-            <div>• Mode: <span style="color: {'#16A34A' if groq_ready else '#D97706'}; font-weight: 700;">{'Live Groq API' if groq_ready else 'Verified Seed Demo'}</span></div>
+        <div style="font-size: 0.82rem; color: #1E293B; line-height: 1.7; background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 12px; padding: 12px 14px;">
+            <div>• Knowledge Chunks: <b style="color: #0F172A;">{chunk_count} verified</b></div>
+            <div>• Model: <b style="color: #0F172A;">{groq_model}</b></div>
+            <div>• Mode: <span style="color: {'#15803D' if groq_ready else '#B45309'}; font-weight: 800;">{'Live Groq API' if groq_ready else 'Verified Seed Demo'}</span></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -163,6 +163,10 @@ with st.sidebar:
 
     if not groq_ready:
         st.caption("Add GROQ_API_KEY to Streamlit Secrets to enable arbitrary query generation.")
+
+    if chunk_count == 0 or st.button("⚡ Reload Knowledge Base", key="reload_kb", use_container_width=True):
+        st.cache_resource.clear()
+        st.rerun()
 
     # Google Drive Sync Trigger (if configured)
     drive_urls_raw = st.secrets.get("GOOGLE_DRIVE_FOLDER_URLS", "")
@@ -193,7 +197,6 @@ if st.session_state.page == "analyze":
         unsafe_allow_html=True,
     )
 
-    # If Knowledge base has no sources
     if len(vector_store.chunks) == 0:
         st.warning(
             """
@@ -202,7 +205,6 @@ if st.session_state.page == "analyze":
             """
         )
 
-    # Selection Row
     col_sub, col_exam = st.columns([1, 1])
     with col_sub:
         subject_options = ["Biology", "Chemistry", "Physics"]
@@ -216,7 +218,6 @@ if st.session_state.page == "analyze":
         selected_exam = st.selectbox("Select Target Exam", exam_options, index=curr_exam_idx)
         st.session_state.exam = selected_exam
 
-    # Input Box
     query_input = st.text_area(
         "Enter Exam Question, Topic, or Concept",
         value=st.session_state.query,
@@ -225,8 +226,7 @@ if st.session_state.page == "analyze":
         help="You can enter a full multiple-choice question stem, a specific topic, or a short keyword.",
     )
 
-    # Quick Example Chips
-    st.markdown("<div style='font-size: 0.8rem; color: #64748B; margin-bottom: 6px; font-weight: 600;'>Quick test prompts:</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 0.85rem; color: #1E293B; margin-bottom: 8px; font-weight: 700;'>Quick test prompts:</div>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     if c1.button("📌 Enzyme Inhibition & Kinetics", use_container_width=True):
         query_input = "Which type of enzyme inhibition increases Km without changing Vmax?"
@@ -243,14 +243,12 @@ if st.session_state.page == "analyze":
 
     st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
 
-    # CTA Button
     if st.button("Analyze with MediCompass →", type="primary", use_container_width=True):
         if not query_input.strip():
             st.error("Please enter a question or topic to analyze.")
         else:
             st.session_state.query = query_input
 
-            # Multi-stage progress experience
             progress_placeholder = st.empty()
             status_stages = [
                 "Retrieving relevant evidence from Punjab, Federal & Syllabus sources...",
@@ -273,7 +271,6 @@ if st.session_state.page == "analyze":
                 progress_bar.progress(int((step_idx + 1) * 25))
                 time.sleep(0.3)
 
-            # RAG Retrieval
             retrieved = vector_store.retrieve_relevant_chunks(
                 query=query_input,
                 subject=st.session_state.subject,
@@ -282,7 +279,6 @@ if st.session_state.page == "analyze":
             )
             st.session_state.retrieved_chunks = retrieved
 
-            # Groq Analysis
             analysis = groq_client.analyze_concept(
                 query=query_input,
                 subject=st.session_state.subject,
@@ -291,7 +287,6 @@ if st.session_state.page == "analyze":
             )
             st.session_state.analysis = analysis
 
-            # Pre-generate 10-MCQ Quiz
             quiz_qs = quiz_gen.generate_10_mcq_quiz(
                 concept_title=analysis.get("concept_title", "Enzyme Kinetics"),
                 subject=st.session_state.subject,
@@ -318,7 +313,6 @@ elif st.session_state.page == "concept":
             navigate_to("analyze")
         st.stop()
 
-    # Header section
     concept_title = analysis.get("concept_title", "Concept Intelligence")
     st.markdown(
         f"""
@@ -336,7 +330,6 @@ elif st.session_state.page == "concept":
         unsafe_allow_html=True,
     )
 
-    # 3 Primary Action Buttons
     b1, b2, b3 = st.columns(3)
     with b1:
         if st.button("🧠 Quick Memorize Diagram", key="btn_to_diag", use_container_width=True):
@@ -350,7 +343,6 @@ elif st.session_state.page == "concept":
 
     st.markdown("<div style='margin-top: 18px;'></div>", unsafe_allow_html=True)
 
-    # Top Grid: Core Concept Card + Study Priority Ring
     col_core, col_priority = st.columns([2.4, 1.2])
 
     with col_core:
@@ -384,7 +376,6 @@ elif st.session_state.page == "concept":
         p_label = analysis.get("priority_label", "STUDY NOW")
         ring_svg = render_fintech_priority_ring(p_score, p_label)
 
-        # Dynamic formula explanation based on whether student has attempted the quiz
         accuracy = st.session_state.student_accuracy
         if accuracy is None:
             perf_text = "⚠ Personal performance: Not available yet (Take 10-MCQ quiz to calibrate)"
@@ -406,7 +397,6 @@ elif st.session_state.page == "concept":
             unsafe_allow_html=True,
         )
 
-    # Deep Concept Explanation
     deep_pts = analysis.get("deep_explanation", [])
     if deep_pts:
         pts_html = ""
@@ -439,7 +429,6 @@ elif st.session_state.page == "concept":
             unsafe_allow_html=True,
         )
 
-    # Source Synthesis: Punjab + Federal
     st.markdown(
         f"""
         <div class="fintech-card">
@@ -475,7 +464,6 @@ elif st.session_state.page == "concept":
         unsafe_allow_html=True,
     )
 
-    # Historical Past-Paper Intelligence & Syllabus Alignment
     col_past, col_syl = st.columns([1.5, 1])
 
     with col_past:
@@ -555,11 +543,9 @@ elif st.session_state.page == "diagram":
         unsafe_allow_html=True,
     )
 
-    # Render interactive concept flowchart
     diagram_html = render_concept_diagram_html(analysis["diagram"])
     st.markdown(diagram_html, unsafe_allow_html=True)
 
-    # Quick Recall Points
     quick_recall = analysis.get("quick_recall", [])
     if quick_recall:
         recall_cards = ""
@@ -586,7 +572,6 @@ elif st.session_state.page == "diagram":
             unsafe_allow_html=True,
         )
 
-    # Actions
     c_diag1, c_diag2 = st.columns(2)
     with c_diag1:
         if st.button("← Return to Concept Intelligence", use_container_width=True):
@@ -605,7 +590,6 @@ elif st.session_state.page == "quiz":
             navigate_to("analyze")
         st.stop()
 
-    # If already submitted, show results view
     if st.session_state.quiz_submitted and st.session_state.quiz_result:
         result = st.session_state.quiz_result
         st.markdown(
@@ -656,7 +640,6 @@ elif st.session_state.page == "quiz":
                 unsafe_allow_html=True,
             )
 
-        # Question Review Section
         st.markdown("<h3 style='font-size: 1.35rem; font-weight: 800; color: #172033; margin: 24px 0 16px 0;'>Detailed Question Breakdown</h3>", unsafe_allow_html=True)
 
         for item in result["detailed_results"]:
@@ -714,10 +697,8 @@ elif st.session_state.page == "quiz":
                 navigate_to("concept")
 
     else:
-        # Live Quiz Taking Experience
         remaining_sec, timer_str, is_expired = get_quiz_timer_state(total_seconds=600)
 
-        # Header with live countdown timer
         col_hdr, col_timer = st.columns([3, 1])
         with col_hdr:
             st.markdown(
@@ -746,7 +727,6 @@ elif st.session_state.page == "quiz":
                 unsafe_allow_html=True,
             )
 
-        # Auto-submit if timer reaches zero
         if is_expired:
             st.warning("⏱ Time expired! Automatically submitting your answers...")
             graded = grade_quiz_submission(questions, st.session_state.quiz_answers)
@@ -755,7 +735,6 @@ elif st.session_state.page == "quiz":
             st.session_state.student_accuracy = graded["percentage"]
             st.rerun()
 
-        # Quiz Questions Form
         with st.form("quiz_form"):
             for i, q in enumerate(questions):
                 st.markdown(
@@ -772,7 +751,6 @@ elif st.session_state.page == "quiz":
                     unsafe_allow_html=True,
                 )
 
-                # Find previous answer index if any
                 saved_ans = st.session_state.quiz_answers.get(q.id, None)
                 def_idx = q.options.index(saved_ans) if saved_ans in q.options else None
 
@@ -820,7 +798,6 @@ elif st.session_state.page == "evidence":
         unsafe_allow_html=True,
     )
 
-    # Tabs by source type
     tab_punjab, tab_fed, tab_syl, tab_past = st.tabs([
         "📘 Punjab Book",
         "📗 Federal Book",
@@ -874,8 +851,8 @@ elif st.session_state.page == "evidence":
 # ─── RESPONSIBLE EDUCATIONAL FOOTER ──────────────────────────────────────────
 st.markdown(
     """
-    <div style="margin-top: 50px; padding: 24px 0; border-top: 1px solid #E2E8F0; text-align: center; font-size: 0.8rem; color: #64748B; line-height: 1.6;">
-        <b>MediCompass AI</b> — Turning exam information into study intelligence.<br/>
+    <div style="margin-top: 50px; padding: 24px 0; border-top: 1.5px solid #CBD5E1; text-align: center; font-size: 0.85rem; color: #334155; line-height: 1.6; font-weight: 500;">
+        <b style="color: #0F172A;">MediCompass AI</b> — Turning exam information into study intelligence.<br/>
         Evidence available ≠ question prediction. MediCompass is an educational study intelligence system.<br/>
         Always verify important curriculum materials against official PMDC syllabus and authorized textbooks.
     </div>
